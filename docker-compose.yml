@@ -1,0 +1,22 @@
+services:
+  task-board:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      # Mount the DIRECTORY, never the bare db file: SQLite in WAL mode needs
+      # board.db + board.db-wal + board.db-shm to live side by side.
+      # Run `mkdir -p data` BEFORE the first `docker compose up` — otherwise
+      # Docker creates it root-owned and the non-root container (uid 1000)
+      # crashes with SQLITE_CANTOPEN. Fix: sudo chown -R 1000:1000 data
+      - ./data:/data
+    environment:
+      PORT: "8765"
+      DB_PATH: /data/board.db
+      STALE_TTL_HOURS: "8"
+      # Uncommenting the next line is the ENTIRE auth upgrade: the server then
+      # requires "Authorization: Bearer <token>" on /mcp and /api/board, and
+      # clients just add that one header to their MCP config. Leaving it unset
+      # = open LAN mode (the default for a trusted home/office network).
+      # AUTH_TOKEN: change-me

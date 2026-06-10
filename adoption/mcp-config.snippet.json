@@ -1,0 +1,9 @@
+{
+  "_comment": "Paste the mcpServers block into your repo's .mcp.json, or run: claude mcp add --transport http task-board http://nas.lan:8765/mcp. Replace nas.lan with the NAS LAN IP if mDNS does not resolve on your machine. If the board has AUTH_TOKEN enabled, add \"headers\": {\"Authorization\": \"Bearer <token>\"} alongside \"url\".",
+  "mcpServers": {
+    "task-board": {
+      "type": "http",
+      "url": "http://nas.lan:8765/mcp"
+    }
+  }
+}

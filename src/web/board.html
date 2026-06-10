@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Task Board</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #14171a;
+    --panel: #1c2126;
+    --panel-2: #232930;
+    --border: #2e3640;
+    --text: #d8dee5;
+    --dim: #8b95a0;
+    --accent: #58a6ff;
+    --amber-bg: #3c2f12; --amber-fg: #e3b341; --amber-bd: #6b5618;
+    --red-bg: #3a1f1d;   --red-fg: #f0857a;   --red-bd: #6e3631;
+    --green-bg: #1b3022; --green-fg: #6fcf8e; --green-bd: #2e5c3d;
+    --mod-bg: #25223a;   --mod-fg: #b3a6f5;   --mod-bd: #443d6e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --bg: #f4f5f7; --panel: #ffffff; --panel-2: #eef0f3; --border: #d4d9de;
+      --text: #22272c; --dim: #66707a; --accent: #0969da;
+      --amber-bg: #fff3cd; --amber-fg: #7a5d00; --amber-bd: #e3cb6e;
+      --red-bg: #ffe5e2;   --red-fg: #a13327;   --red-bd: #e7a9a1;
+      --green-bg: #dcf2e3; --green-fg: #1a6b38; --green-bd: #a4d4b4;
+      --mod-bg: #e9e5fb;   --mod-fg: #4f3fa8;   --mod-bd: #c4baee;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI",
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  }
+  .onboard-link {
+    color: var(--accent, #7aa2f7);
+    text-decoration: none;
+    font-size: 0.85rem;
+    margin-right: 0.75rem;
+  }
+  .onboard-link:hover { text-decoration: underline; }
+  header {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px;
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg); z-index: 1;
+  }
+  h1 { font-size: 18px; margin: 0; }
+  .subtitle { color: var(--dim); font-size: 12px; }
+  .controls { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--dim); }
+  select {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px;
+  }
+  #error-banner {
+    background: var(--red-bg); color: var(--red-fg);
+    border-bottom: 1px solid var(--red-bd); padding: 8px 20px; font-size: 13px;
+  }
+  main { padding: 16px 20px 48px; max-width: 1500px; margin: 0 auto; }
+  .project { margin-bottom: 28px; }
+  .project-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .project-name { font-size: 15px; margin: 0; font-family: var(--mono); color: var(--accent); }
+  .project-count { color: var(--dim); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .card.status-done, .card.status-abandoned { opacity: 0.8; }
+  .card-head { display: flex; align-items: flex-start; gap: 8px; }
+  .task-title { font-size: 14px; margin: 0; flex: 1; overflow-wrap: anywhere; }
+  .badge {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    border-radius: 10px; padding: 1px 8px; border: 1px solid var(--border);
+    color: var(--dim); white-space: nowrap;
+  }
+  .badge.st-active { color: var(--green-fg); border-color: var(--green-bd); background: var(--green-bg); }
+  .badge.st-done { color: var(--accent); }
+  .badge.stale { color: var(--amber-fg); border-color: var(--amber-bd); background: var(--amber-bg); cursor: help; }
+  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; color: var(--dim); }
+  .owner-human { font-weight: 700; color: var(--text); }
+  .owner-agent { color: var(--dim); }
+  .branch {
+    font-family: var(--mono); font-size: 11px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; overflow-wrap: anywhere;
+  }
+  .time[title] { cursor: help; }
+  .scopes { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-size: 11px; border-radius: 4px; padding: 1px 6px;
+    border: 1px solid var(--border); background: var(--panel-2); overflow-wrap: anywhere;
+  }
+  .chip.path { font-family: var(--mono); }
+  .chip.module { background: var(--mod-bg); color: var(--mod-fg); border-color: var(--mod-bd); }
+  .chip.broad { background: var(--red-bg); color: var(--red-fg); border-color: var(--red-bd); font-weight: 700; cursor: help; }
+  .closing-note { margin: 0; font-size: 12px; color: var(--dim); overflow-wrap: anywhere; white-space: pre-wrap; }
+  .note-label { font-weight: 600; }
+  .comments { border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 5px; }
+  .comments-head { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .comment { border-left: 3px solid var(--border); background: var(--panel-2); border-radius: 0 4px 4px 0; padding: 4px 8px; }
+  .comment.kind-overlap_notice { border-left-color: var(--red-bd); background: var(--red-bg); }
+  .comment.kind-boundary_agreement { border-left-color: var(--green-bd); background: var(--green-bg); }
+  .comment-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-size: 11px; color: var(--dim); }
+  .comment-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .comment.kind-overlap_notice .comment-kind { color: var(--red-fg); }
+  .comment.kind-boundary_agreement .comment-kind { color: var(--green-fg); }
+  .comment-body {
+    margin: 2px 0 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .closed-box { margin-top: 10px; }
+  .closed-box summary { cursor: pointer; color: var(--dim); font-size: 12px; user-select: none; }
+  .closed-box .grid { margin-top: 8px; }
+  .empty { color: var(--dim); font-size: 13px; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Task Board</h1>
+  <span class="subtitle">informs, never assigns <span id="ttl-note"></span></span>
+  <div class="controls">
+    <a href="/onboard" class="onboard-link">接入说明</a>
+    <label for="project-filter">project</label>
+    <select id="project-filter"></select>
+    <span id="updated-stamp">loading…</span>
+  </div>
+</header>
+<div id="error-banner" hidden></div>
+<main id="board"><p class="empty">loading…</p></main>
+<script>
+'use strict';
+// XSS hard rule: every piece of server data is rendered exclusively through
+// createElement/textContent (or createTextNode / title attribute). This file
+// contains zero direct-HTML sinks (inner/outer HTML, adjacent-HTML insertion).
+
+const POLL_MS = 10000;
+const STATUSES = { active: 'active', done: 'done', abandoned: 'abandoned' };
+const KINDS = { comment: 'comment', boundary_agreement: 'boundary_agreement', overlap_notice: 'overlap_notice' };
+
+const state = { data: null, filter: 'all', error: null, fetchedAt: null };
+
+const $board = document.getElementById('board');
+const $filter = document.getElementById('project-filter');
+const $stamp = document.getElementById('updated-stamp');
+const $banner = document.getElementById('error-banner');
+const $ttl = document.getElementById('ttl-note');
+
+/** Create an element; text always goes through textContent. */
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+function relTime(ms, now) {
+  const min = Math.floor(Math.max(0, now - ms) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return min + 'm ago';
+  const h = Math.floor(min / 60);
+  if (h < 48) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+/** Relative time with absolute ISO timestamp in the title attribute. */
+function timeEl(label, ms, now) {
+  const text = ms == null ? '—' : relTime(ms, now);
+  const span = el('span', 'time', label ? label + ' ' + text : text);
+  if (ms != null) span.title = new Date(ms).toISOString();
+  return span;
+}
+
+function fmtClock(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
+/** 'human/agent' → human bold, '/agent' dim. No slash → whole id bold. */
+function ownerBadge(agentId) {
+  const id = String(agentId);
+  const badge = el('span', 'owner');
+  const slash = id.indexOf('/');
+  if (slash < 0) {
+    badge.appendChild(el('span', 'owner-human', id));
+  } else {
+    badge.appendChild(el('span', 'owner-human', id.slice(0, slash)));
+    badge.appendChild(el('span', 'owner-agent', '/' + id.slice(slash + 1)));
+  }
+  return badge;
+}
+
+function chip(className, text, noteTitle) {
+  const c = el('span', className, text);
+  if (noteTitle) c.title = noteTitle;
+  return c;
+}
+
+function commentsBlock(t, now) {
+  const box = el('div', 'comments');
+  const shown = t.recent_comments.length;
+  const label = t.comment_count > shown
+    ? 'comments (last ' + shown + ' of ' + t.comment_count + ')'
+    : 'comments (' + t.comment_count + ')';
+  box.appendChild(el('div', 'comments-head', label));
+  for (const c of t.recent_comments) {
+    const kind = KINDS[c.kind] || 'comment'; // whitelist: never build class names from raw data
+    const item = el('div', 'comment kind-' + kind);
+    const meta = el('div', 'comment-meta');
+    meta.appendChild(ownerBadge(c.author_agent_id));
+    meta.appendChild(el('span', 'comment-kind', c.kind));
+    meta.appendChild(timeEl('', c.created_at, now));
+    item.appendChild(meta);
+    item.appendChild(el('p', 'comment-body', c.body));
+    box.appendChild(item);
+  }
+  return box;
+}
+
+function taskCard(t, now) {
+  const status = STATUSES[t.status] || 'active'; // whitelist for class names
+  const card = el('article', 'card status-' + status);
+
+  const head = el('div', 'card-head');
+  head.appendChild(el('h3', 'task-title', t.title));
+  head.appendChild(el('span', 'badge st-' + status, t.status));
+  card.appendChild(head);
+
+  const meta = el('div', 'meta');
+  meta.appendChild(ownerBadge(t.owner_agent_id));
+  if (t.branch) meta.appendChild(el('code', 'branch', t.branch));
+  meta.appendChild(timeEl('created', t.created_at, now));
+  if (status === 'active') {
+    meta.appendChild(timeEl('heartbeat', t.last_heartbeat_at, now));
+    if (t.stale) {
+      const stale = el('span', 'badge stale', 'STALE');
+      stale.title = 'advisory only — derived from heartbeat TTL, never auto-closed';
+      meta.appendChild(stale);
+    }
+  } else if (t.closed_at != null) {
+    meta.appendChild(timeEl('closed', t.closed_at, now));
+  }
+  card.appendChild(meta);
+
+  if ((t.scopes && t.scopes.length > 0) || t.broad_glob) {
+    const row = el('div', 'scopes');
+    for (const s of t.scopes || []) {
+      if (s.path_glob) row.appendChild(chip('chip path', s.path_glob, s.note));
+      if (s.module) row.appendChild(chip('chip module', s.module, s.note));
+    }
+    if (t.broad_glob) {
+      row.appendChild(chip('chip broad', 'broad', 'a scope glob on this task matches from the repo root'));
+    }
+    card.appendChild(row);
+  }
+
+  if (t.closing_note) {
+    const note = el('p', 'closing-note');
+    note.appendChild(el('span', 'note-label', 'closing note: '));
+    note.appendChild(document.createTextNode(t.closing_note));
+    card.appendChild(note);
+  }
+
+  if (t.comment_count > 0 && t.recent_comments) card.appendChild(commentsBlock(t, now));
+  return card;
+}
+
+function projectSection(p, now) {
+  const section = el('section', 'project');
+  const active = p.tasks.filter((t) => t.status === 'active');
+  const closed = p.tasks.filter((t) => t.status !== 'active');
+
+  const head = el('div', 'project-head');
+  head.appendChild(el('h2', 'project-name', p.project));
+  head.appendChild(el('span', 'project-count', active.length + ' active'));
+  section.appendChild(head);
+
+  const grid = el('div', 'grid');
+  if (active.length === 0) grid.appendChild(el('p', 'empty', 'no active tasks'));
+  for (const t of active) grid.appendChild(taskCard(t, now));
+  section.appendChild(grid);
+
+  if (closed.length > 0) {
+    const details = el('details', 'closed-box');
+    details.appendChild(el('summary', null, 'recently closed (' + closed.length + ')'));
+    const closedGrid = el('div', 'grid');
+    for (const t of closed) closedGrid.appendChild(taskCard(t, now));
+    details.appendChild(closedGrid);
+    section.appendChild(details);
+  }
+  return section;
+}
+
+function renderFilter() {
+  const names = state.data.projects.map((p) => p.project);
+  if (state.filter !== 'all' && !names.includes(state.filter)) state.filter = 'all';
+  $filter.replaceChildren();
+  const all = el('option', null, 'all projects');
+  all.value = 'all';
+  $filter.appendChild(all);
+  for (const name of names) {
+    const opt = el('option', null, name);
+    opt.value = name;
+    $filter.appendChild(opt);
+  }
+  $filter.value = state.filter;
+}
+
+function renderBoard() {
+  $board.replaceChildren();
+  const projects = state.data.projects.filter(
+    (p) => state.filter === 'all' || p.project === state.filter
+  );
+  if (projects.length === 0) {
+    $board.appendChild(el('p', 'empty', 'no tasks on the board'));
+    return;
+  }
+  const now = Date.now();
+  for (const p of projects) $board.appendChild(projectSection(p, now));
+}
+
+function renderBanner() {
+  if (state.error) {
+    $banner.hidden = false;
+    $banner.textContent = 'board fetch failed: ' + state.error +
+      (state.data ? ' — showing last good data from ' + fmtClock(state.fetchedAt) : '');
+  } else {
+    $banner.hidden = true;
+  }
+}
+
+function render() {
+  renderBanner();
+  if (state.fetchedAt) $stamp.textContent = 'last updated ' + fmtClock(state.fetchedAt);
+  if (!state.data) {
+    $board.replaceChildren(el('p', 'empty', 'waiting for first successful fetch…'));
+    return;
+  }
+  $ttl.textContent = '· stale after ' + state.data.stale_ttl_hours + 'h (advisory)';
+  renderFilter();
+  renderBoard();
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/board', { headers: { accept: 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    state.data = await res.json();
+    state.error = null;
+    state.fetchedAt = new Date();
+  } catch (err) {
+    state.error = err instanceof Error ? err.message : String(err);
+  }
+  render();
+}
+
+let timer = null;
+function startPolling() { if (timer === null) timer = setInterval(refresh, POLL_MS); }
+function stopPolling() { if (timer !== null) { clearInterval(timer); timer = null; } }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { stopPolling(); } else { refresh(); startPolling(); }
+});
+$filter.addEventListener('change', () => { state.filter = $filter.value; renderBoard(); });
+
+refresh();
+startPolling();
+</script>
+</body>
+</html>

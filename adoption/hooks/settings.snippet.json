@@ -1,0 +1,25 @@
+{
+  "_comment": "Merge the hooks block into your repo's .claude/settings.json. Copy adoption/hooks/board-check.sh into your repo and adjust the path below if you place it elsewhere (e.g. .claude/hooks/board-check.sh). $CLAUDE_PROJECT_DIR is expanded by Claude Code to the project root. Set BOARD_URL / AGENT_BOARD_ID in your environment if the defaults don't fit.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/adoption/hooks/board-check.sh\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/adoption/hooks/board-check.sh\" --receipt"
+          }
+        ]
+      }
+    ]
+  }
+}
