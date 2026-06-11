@@ -199,7 +199,11 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
     res.sendFile(join(opts.webDir, 'onboard.html'));
   });
 
-  // The onboarding page displays the REAL adoption-kit files (single source of truth).
+  // The onboarding page displays the REAL adoption-kit files (single source of
+  // truth). Served with the same host substitution as /setup: the files keep
+  // the nas.lan placeholder in the repo, but agents/humans receive the address
+  // they actually used (seed-user bug: nas.lan does not resolve everywhere,
+  // and the snippet promised an already-substituted address).
   app.get('/adoption/:name', auth, (req, res) => {
     const name = req.params['name'];
     const rel = typeof name === 'string' ? ADOPTION_FILES[name] : undefined;
@@ -209,7 +213,8 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
     }
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.type('text/plain; charset=utf-8');
-    res.sendFile(join(opts.adoptionDir, rel));
+    const text = readFileSync(join(opts.adoptionDir, rel), 'utf8');
+    res.send(text.replaceAll('http://nas.lan:8765', requestOrigin(req)));
   });
 
   // Agent self-serve onboarding: hand any agent this URL and it can configure

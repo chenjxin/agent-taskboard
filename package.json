@@ -1,6 +1,6 @@
 {
   "name": "agent-task-board",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "LAN task coordination board for AI coding agents (MCP server over Streamable HTTP)",
   "type": "module",
   "private": true,

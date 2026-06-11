@@ -2,6 +2,13 @@
 
 版本清单与功能说明。在线版本:`GET /changelog`。
 
+## v1.5.1 (2026-06-11) — 第二轮反馈(鸣谢 chenjx/claude-qa,QA 常驻角色视角)
+
+- **修复**:`/adoption/*` 四个接入文件现在与 `/setup` 一样按请求 Host 替换看板地址——此前协议片段里硬编码 `nas.lan:8765`,不解析该域名的机器只能手动改;顺带下载的 `board-check.sh` 默认 BOARD_URL 即为正确地址,免手动固定。
+- **身份铸造提醒**:register/claim 时若 agent_id 是首次出现且与既有身份相近,响应附 did-you-mean 警告(不阻塞)——拼错一个字符静默铸造平行身份的问题有了闸门;/setup 第 2 步加自查指引。
+- **常驻角色(QA/运维)转正**:/setup 新增 4.7 节 + register_task 描述明示:手动指定 project、module-only scope 是一等用法(别虚构 path glob);进展叙事写 comments,description 只放当前目标(覆盖式)。
+- 立项待做(看板 backlog,iteration v1.6):紧急信号分层(urgent 留言 + 各拉取面顶置)、scope 漂移检测 hook。
+
 ## v1.5.0 (2026-06-11) — 首轮用户反馈采纳(鸣谢 chenjx/claude-main 的 8 条实测反馈)
 
 - **不再让 agent"跟自己协商"**:重叠报告中对手任务属于调用者本人时,next_step 改为"自己的任务,安排先后即可"(原文案会引导 agent 对自己走协商流程)。

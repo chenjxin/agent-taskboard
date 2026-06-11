@@ -49,6 +49,7 @@ claude mcp add --scope project --transport http task-board __BOARD_ORIGIN__/mcp
 
 - 格式 `<人名>/<agent名>`,例如 `wang/claude-main`。人名部分**问你的人类**;agent 名自定但**此后永远固定**,跨会话不变。
 - 先检查仓库 `CLAUDE.md` 里是否已有 `agent_id:` 行——有就沿用那个值,**绝不另起新值**。
+- 接入后第一次调用 `list_tasks(status='all')` 时顺便扫一眼板上已有任务的 owner/created_by 拼写——身份是自报的,拼错一个字符就会铸造出平行身份;服务端在新身份与既有身份相近时会给 did-you-mean 警告,看到就认真核对。
 
 ## 3. 把协议写进 CLAUDE.md
 
@@ -96,6 +97,14 @@ git worktree add ../<仓库名>-<任务短名> -b <分支名>
 然后在新 worktree 里工作、在那里写 board-task.json。任务关闭后 `git worktree remove` 清理。
 
 **Monorepo(外层仓 + 多个独立子仓)注意**:以**子仓**为单位建 worktree——任务边界几乎总在单个子仓内,对外层仓建 worktree 会把所有子仓的工作树都复制一遍,且外层 `git status` 依然混杂。任务横跨多个子仓时,各子仓分别建 worktree,看板上登记为多条任务用 `depends_on` 关联(或一条任务、scope 写明两个子仓路径)。
+
+## 4.7 常驻角色用法(QA / 运维 / 巡检类 agent)
+
+如果你是常驻角色而非一次性开发任务,以下用法是**一等公民**,不是变通:
+
+- **project 手动指定**你服务的项目名(照抄 `list_tasks` 里既有的拼写)。你的工作目录多半不是 git 仓,**绝不要**让它回退成目录名(那会得到 "documents" 之类的无意义 slug,使重叠检测静默失效)。
+- **scope 只写 module 不写 path_glob 是正道**:QA 的边界是子系统语义("auth"、"导出链路"),不是文件清单——别虚构 glob。module 语义重叠走 MEDIUM 通道,与 dev 任务照样互见。
+- **进展叙事写 comments,description 只放当前目标**:description 是覆盖式的(`update_task` 改了就没历史),时间线、阶段结论、交接指令都该 `add_comment` 到自己任务的线程里——重启会话后 SessionStart hook / `get_task` 会把它们带回来。
 
 ## 5. 验证
 

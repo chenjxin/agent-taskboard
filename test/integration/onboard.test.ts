@@ -54,7 +54,12 @@ describe('GET /adoption/:name', () => {
 
     const claudeMd = await fetch(`${base}/adoption/CLAUDE.md.snippet.md`);
     expect(claudeMd.status).toBe(200);
-    expect(await claudeMd.text()).toContain('agent_id');
+    const claudeMdText = await claudeMd.text();
+    expect(claudeMdText).toContain('agent_id');
+    // Host substitution applies to adoption files too (seed-user bug: the
+    // snippet shipped a hardcoded nas.lan that not every machine resolves).
+    expect(claudeMdText).not.toContain('nas.lan');
+    expect(claudeMdText).toContain(base);
 
     const hooks = await fetch(`${base}/adoption/hooks-settings.snippet.json`);
     expect(hooks.status).toBe(200);
@@ -62,7 +67,9 @@ describe('GET /adoption/:name', () => {
 
     const sh = await fetch(`${base}/adoption/board-check.sh`);
     expect(sh.status).toBe(200);
-    expect(await sh.text()).toContain('#!');
+    const shText = await sh.text();
+    expect(shText).toContain('#!');
+    expect(shText).toContain(`BOARD_URL:-${base}`); // downloaded hook works without manual BOARD_URL pinning
   });
 
   it('404s anything off the whitelist (no traversal)', async () => {

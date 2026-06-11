@@ -5,6 +5,7 @@ import { upsertAgent } from '../../db/repo/agents.js';
 import { commentsByTask, insertComment, SYSTEM_AUTHOR } from '../../db/repo/comments.js';
 import { claimTask, getTask } from '../../db/repo/tasks.js';
 import { scopesByTask } from '../../db/repo/scopes.js';
+import { newIdentityHint } from '../cores.js';
 import type { BoardDeps } from '../deps.js';
 import { TOOL_DESCRIPTIONS } from '../descriptions.js';
 import { claimTaskShape } from '../schemas.js';
@@ -55,6 +56,7 @@ export function registerClaimTask(server: McpServer, deps: BoardDeps): void {
           module: s.module,
           note: s.note,
         }));
+        const identityHint = newIdentityHint(deps, args.agent_id);
         let report!: OverlapReport;
         deps.db.transaction(() => {
           upsertAgent(deps.db, args.agent_id, now);
@@ -86,6 +88,7 @@ export function registerClaimTask(server: McpServer, deps: BoardDeps): void {
           // Everything said while this sat in the backlog — the heartbeat cursor
           // starts at claim time, so this response is the only delivery channel.
           thread: commentsByTask(deps.db, task.id),
+          warnings: { new_identity_hint: identityHint },
           overlap_report: report,
           next_step: `Persist {"task_id":"${task.id}","project":"${task.project}"} to .claude/board-task.json in your worktree. READ the thread above (pre-claim negotiation lives there), then act on overlap_report before writing code in shared paths.`,
         });

@@ -6,8 +6,9 @@
 import { BoardError } from '../core/errors.js';
 import { normalizeProjectSlug } from '../core/slug.js';
 import type { BugSeverity, OverlapReport, ScopeRowInput, TaskRow, TaskType } from '../core/types.js';
+import { didYouMean } from '../core/slug.js';
 import { newTaskId } from '../db/ids.js';
-import { upsertAgent } from '../db/repo/agents.js';
+import { allAgentIds, isKnownAgent, upsertAgent } from '../db/repo/agents.js';
 import { depNoticeFirstLine, insertComment, SYSTEM_AUTHOR } from '../db/repo/comments.js';
 import { dependentsOf, depInfos, replaceDeps } from '../db/repo/deps.js';
 import { insertScopeRows } from '../db/repo/scopes.js';
@@ -34,6 +35,22 @@ export interface RegisterTaskArgs {
   severity?: BugSeverity | undefined;
 }
 
+/**
+ * Identities are minted silently on first use (self-reported trust model), so
+ * a one-character typo creates a parallel identity nobody notices. At the two
+ * identity-establishing writes (register/claim) we warn — never block — when a
+ * BRAND-NEW agent_id closely resembles an existing one. Call BEFORE upsert.
+ */
+export function newIdentityHint(deps: BoardDeps, agentId: string): string | null {
+  if (isKnownAgent(deps.db, agentId)) return null;
+  const near = didYouMean(agentId, allAgentIds(deps.db));
+  if (near.length === 0) return null;
+  return (
+    `First time seeing identity '${agentId}' — it was created. It closely resembles existing identit${near.length > 1 ? 'ies' : 'y'}: ${near.join(', ')}. ` +
+    `If this is a spelling drift, switch to the existing value and keep it stable across sessions (CLAUDE.md 'agent_id:' line is the source of truth).`
+  );
+}
+
 export function registerTaskCore(deps: BoardDeps, args: RegisterTaskArgs): Record<string, unknown> {
   const now = deps.now();
   const startAs = args.start_as ?? 'active';
@@ -48,6 +65,7 @@ export function registerTaskCore(deps: BoardDeps, args: RegisterTaskArgs): Recor
   const id = newTaskId();
   const status = startAs === 'active' ? 'active' : 'planned';
   const owner = startAs === 'backlog' ? null : args.agent_id;
+  const identityHint = newIdentityHint(deps, args.agent_id);
   let report!: OverlapReport;
   deps.db.transaction(() => {
     upsertAgent(deps.db, args.agent_id, now);
@@ -115,6 +133,7 @@ export function registerTaskCore(deps: BoardDeps, args: RegisterTaskArgs): Recor
         args.severity && type !== 'bug'
           ? "severity is a bug-triage field; it was stored but only type='bug' tasks surface it in bug views."
           : null,
+      new_identity_hint: identityHint,
     },
     overlap_report: report,
     next_step:

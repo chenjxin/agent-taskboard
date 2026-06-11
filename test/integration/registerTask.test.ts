@@ -55,6 +55,22 @@ describe('register_task', () => {
     expect(report.counterparts[0]!.next_step).not.toContain('add_comment');
   });
 
+  it('warns when a BRAND-NEW identity closely resembles an existing one (typo minting)', async () => {
+    const b = await makeTestBoard();
+    await b.callOk('register_task', registerArgs()); // mints alice/claude
+    const typo = await b.callOk('register_task', registerArgs({
+      agent_id: 'alice/clauda', // one-char drift
+      title: 'typo identity task',
+      scope: [{ module: 'docs' }],
+    }));
+    const hint = (typo['warnings'] as Record<string, unknown>)['new_identity_hint'] as string;
+    expect(hint).toContain('alice/claude');
+    expect(hint).toContain('spelling');
+    // Known identity: no hint.
+    const again = await b.callOk('register_task', registerArgs({ title: 'second task' }));
+    expect((again['warnings'] as Record<string, unknown>)['new_identity_hint']).toBeNull();
+  });
+
   it('warns when no scope is declared', async () => {
     const b = await makeTestBoard();
     const out = await b.callOk('register_task', registerArgs({ scope: [] }));
