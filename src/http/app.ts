@@ -11,6 +11,7 @@ import { BoardError } from '../core/errors.js';
 import type { BugSeverity } from '../core/types.js';
 import { allAgents } from '../db/repo/agents.js';
 import { allFeedback } from '../db/repo/feedback.js';
+import { reportMeta } from '../db/repo/scopes.js';
 import { registerTaskCore, updateBugStateCore } from '../mcp/cores.js';
 import { buildBoardData } from '../web/boardData.js';
 import { bearerAuth, digestEqual } from './auth.js';
@@ -243,6 +244,15 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
 
   // Human bug report. Identity: client sends a bare NAME, the server appends
   // '/human' — the form can never impersonate a full agent_id like 'alice/claude'.
+  // Dropdown vocabulary for the report-bug form (projects + declared modules).
+  app.get('/api/report-meta', auth, (_req, res) => {
+    try {
+      res.json({ projects: reportMeta(deps.db) });
+    } catch (e) {
+      sendBoardError(res, '/api/report-meta', e);
+    }
+  });
+
   app.post('/api/bugs', auth, bugWriteLimiter, jsonOnly, (req, res) => {
     try {
       const b = (req.body ?? {}) as Record<string, unknown>;
@@ -260,13 +270,29 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
       }
       const project = str(b['project']);
       const title = str(b['title']);
-      const description = str(b['description']);
-      if (!project || !title || !description) {
+      const steps = str(b['description']);
+      const expected = str(b['expected']);
+      const actual = str(b['actual']);
+      const module = str(b['module']);
+      if (!project || !title || !steps) {
         throw new BoardError('VALIDATION_ERROR', 'project, title and description are all required.');
       }
-      if (project.length > 200 || title.length > 200 || description.length > 4000) {
-        throw new BoardError('VALIDATION_ERROR', 'Field too long (project/title <= 200, description <= 4000).');
+      if (
+        project.length > 200 || title.length > 200 || steps.length > 4000 ||
+        expected.length > 2000 || actual.length > 2000 || module.length > 100
+      ) {
+        throw new BoardError(
+          'VALIDATION_ERROR',
+          'Field too long (project/title <= 200, description <= 4000, expected/actual <= 2000, module <= 100).',
+        );
       }
+      // Structured sections beat one mega-textarea — the fixer's claim_task
+      // thread receives the same readable shape.
+      const description = [
+        `复现步骤:\n${steps}`,
+        expected ? `期望表现:\n${expected}` : null,
+        actual ? `实际表现:\n${actual}` : null,
+      ].filter(Boolean).join('\n\n');
       const result = registerTaskCore(deps, {
         agent_id: `${name}/human`,
         project,
@@ -275,6 +301,9 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
         type: 'bug',
         start_as: 'backlog',
         severity: severity as BugSeverity | undefined,
+        // A picked module gives the bug a scope — which is exactly what makes
+        // it ROUTABLE to that module's developer (v1.7 related_backlog).
+        ...(module ? { scope: [{ module }] } : {}),
       });
       const task = result['task'] as { id: string; project: string };
       res.status(201).json({ ok: true, task_id: task.id, project: task.project });

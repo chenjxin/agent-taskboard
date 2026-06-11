@@ -16,6 +16,28 @@ export function replaceScopeRows(db: Db, taskId: string, rows: ScopeRowInput[]):
   insertScopeRows(db, taskId, rows);
 }
 
+/**
+ * Form metadata for the human bug-report page: every project on the board and
+ * the modules its tasks have ever declared. Dropdowns instead of free text —
+ * humans should pick from the vocabulary agents actually use, because a typed
+ * module is what makes the bug routable (v1.7 related_backlog).
+ */
+export function reportMeta(db: Db): Array<{ project: string; modules: string[] }> {
+  const projects = db
+    .prepare(`SELECT DISTINCT project FROM tasks ORDER BY project`)
+    .all() as Array<{ project: string }>;
+  const mods = db
+    .prepare(
+      `SELECT DISTINCT t.project, s.module FROM scopes s
+       JOIN tasks t ON t.id = s.task_id
+       WHERE s.module IS NOT NULL ORDER BY t.project, s.module`,
+    )
+    .all() as Array<{ project: string; module: string }>;
+  const byProject = new Map<string, string[]>(projects.map((p) => [p.project, []]));
+  for (const m of mods) byProject.get(m.project)?.push(m.module);
+  return [...byProject.entries()].map(([project, modules]) => ({ project, modules }));
+}
+
 export function scopesByTask(db: Db, taskId: string): ScopeRow[] {
   return db.prepare(`SELECT * FROM scopes WHERE task_id = ? ORDER BY id`).all(taskId) as ScopeRow[];
 }

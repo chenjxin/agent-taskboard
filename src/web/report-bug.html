@@ -51,17 +51,21 @@
     padding: 16px; display: flex; flex-direction: column; gap: 14px;
   }
   .field { display: flex; flex-direction: column; gap: 4px; }
+  .field[hidden] { display: none; } /* author display:flex would override the [hidden] UA rule */
   label { font-size: 13px; font-weight: 600; }
   .required::after { content: ' *'; color: var(--red-fg); }
+  .batch-toggle label { font-weight: 400; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .batch-toggle input { width: auto; }
   .hint { font-size: 12px; color: var(--dim); }
   input, select, textarea {
     background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 6px 8px; font: inherit; width: 100%;
   }
   input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
-  textarea { min-height: 160px; resize: vertical; }
+  textarea { min-height: 120px; resize: vertical; }
+  textarea.short { min-height: 56px; }
   button[type="submit"] {
-    align-self: flex-start; font: inherit; font-weight: 600; cursor: pointer;
+    align-self: flex-end; font: inherit; font-weight: 600; cursor: pointer;
     padding: 7px 18px; border-radius: 6px;
     color: var(--green-fg); border: 1px solid var(--green-bd); background: var(--green-bg);
   }
@@ -85,8 +89,26 @@
   </div>
   <div class="field">
     <label class="required" for="f-project">项目</label>
-    <input id="f-project" name="project" type="text" required>
-    <span class="hint">仓库名小写，如 reload-front</span>
+    <select id="f-project" name="project" required></select>
+    <span class="hint">从看板上的项目里选</span>
+  </div>
+  <div class="field">
+    <label for="f-module">功能模块</label>
+    <select id="f-module" name="module">
+      <option value="" selected>(不确定 / 整体)</option>
+    </select>
+    <span class="hint">选了模块,bug 会自动出现在该模块开发者眼前;不确定就留默认</span>
+  </div>
+  <div class="field batch-toggle">
+    <label><input id="f-batch" type="checkbox"> 批量模式(同一模块很多 bug 时:一行一条,格式「标题 | 复现步骤」,步骤可省)</label>
+  </div>
+  <div class="field" id="batch-field" hidden>
+    <label class="required" for="f-batch-lines">批量清单</label>
+    <textarea id="f-batch-lines" maxlength="200000"
+      placeholder="三种来源任选:&#10;1. Excel 里选中区域直接复制粘贴到这里(列序:标题 复现步骤 期望 实际 严重程度,后四列可省)&#10;2. 下方「导入 CSV」选文件&#10;3. 手写:标题 | 复现步骤"></textarea>
+    <span class="hint">每行一条 bug。Excel 粘贴/CSV 列序:标题、复现步骤、期望表现、实际表现、严重程度(critical/high/medium/low 或 阻断/严重/一般/轻微,省略用上方下拉值);自带表头行会被自动跳过;项目/模块沿用上方选择,逐条顺序提交。</span>
+    <input id="f-import" type="file" accept=".csv,.tsv,.txt">
+    <span class="hint">导入只是读入预览到上面的框里,检查无误后再点提交;中文 Excel 导出的 GBK 编码 CSV 可直接选</span>
   </div>
   <div class="field">
     <label class="required" for="f-title">标题</label>
@@ -103,9 +125,19 @@
     </select>
   </div>
   <div class="field">
-    <label class="required" for="f-description">复现步骤与现象</label>
+    <label class="required" for="f-description">复现步骤</label>
     <textarea id="f-description" name="description" required maxlength="4000"
-      placeholder="环境/步骤/期望/实际"></textarea>
+      placeholder="1. 打开 …&#10;2. 点击 …&#10;3. …"></textarea>
+  </div>
+  <div class="field">
+    <label for="f-expected">期望表现</label>
+    <textarea id="f-expected" name="expected" class="short" maxlength="2000"
+      placeholder="应该发生什么(选填)"></textarea>
+  </div>
+  <div class="field">
+    <label for="f-actual">实际表现</label>
+    <textarea id="f-actual" name="actual" class="short" maxlength="2000"
+      placeholder="实际发生了什么,有报错贴报错(选填)"></textarea>
   </div>
   <div id="result" hidden></div>
   <button type="submit" id="f-submit">提交</button>
@@ -127,14 +159,220 @@ const NAME_KEY = 'board-reporter-name';
 const $form = document.getElementById('bug-form');
 const $name = document.getElementById('f-name');
 const $project = document.getElementById('f-project');
+const $module = document.getElementById('f-module');
 const $title = document.getElementById('f-title');
 const $severity = document.getElementById('f-severity');
 const $description = document.getElementById('f-description');
+const $expected = document.getElementById('f-expected');
+const $actual = document.getElementById('f-actual');
 const $submit = document.getElementById('f-submit');
 const $result = document.getElementById('result');
 
 const remembered = localStorage.getItem(NAME_KEY);
 if (remembered) $name.value = remembered;
+
+// Batch mode: one line per bug, same project/module/severity for the whole list.
+const $batch = document.getElementById('f-batch');
+const $batchField = document.getElementById('batch-field');
+const $batchLines = document.getElementById('f-batch-lines');
+const $singleFields = [$title, $description, $expected, $actual];
+
+// Minimal RFC4180 CSV: quoted fields may contain commas/newlines/escaped quotes.
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.some((c) => c.trim() !== '')) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  row.push(field);
+  if (row.some((c) => c.trim() !== '')) rows.push(row);
+  return rows;
+}
+
+const $import = document.getElementById('f-import');
+$import.addEventListener('change', async () => {
+  const file = $import.files && $import.files[0];
+  if (!file) return;
+  try {
+    const buf = await file.arrayBuffer();
+    let text;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+    } catch (_notUtf8) {
+      text = new TextDecoder('gbk').decode(buf); // 中文 Excel 导出的 CSV 默认 GBK
+    }
+    const isTsv = text.slice(0, 2000).includes('\t');
+    const rows = isTsv
+      ? text.split(/\r?\n/).map((l) => l.split('\t'))
+      : parseCsv(text);
+    const lines = rows
+      .map((r) => r.map((c) => c.trim().replace(/\t/g, ' ')).join('\t'))
+      .filter((l) => l.replace(/\t/g, '').trim() !== '');
+    if (lines.length === 0) { showResult('err', '文件里没有可识别的行'); return; }
+    $batchLines.value = lines.join('\n');
+    showResult('ok', '已读入 ' + lines.length + ' 行(含表头会自动跳过)。请检查上面的预览,确认后点提交。');
+  } catch (err) {
+    showResult('err', '文件读取失败: ' + (err instanceof Error ? err.message : String(err)));
+  } finally {
+    $import.value = '';
+  }
+});
+
+$batch.addEventListener('change', () => {
+  const on = $batch.checked;
+  $batchField.hidden = !on;
+  for (const f of $singleFields) {
+    f.closest('.field').hidden = on;
+    f.required = !on && (f === $title || f === $description);
+  }
+  $batchLines.required = on;
+});
+
+async function postBug(payload) {
+  const res = await fetch('/api/bugs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  let body = null;
+  try { body = await res.json(); } catch (_ignored) { /* keep null */ }
+  return { ok: res.ok, status: res.status, body };
+}
+
+function basePayload(name) {
+  return {
+    name: name,
+    project: document.getElementById('f-project').value.trim(),
+    module: $module.value,
+    severity: $severity.value,
+  };
+}
+
+const SEVERITY_ALIASES = {
+  critical: 'critical', high: 'high', medium: 'medium', low: 'low',
+  '阻断': 'critical', '严重': 'high', '一般': 'medium', '轻微': 'low',
+};
+const HEADER_WORDS = ['标题', 'title', '复现', 'steps', '严重', 'severity'];
+
+// One batch line -> bug fields. Columns: 标题/复现步骤/期望/实际/严重程度.
+// Tab-separated (Excel paste & CSV import) preferred; '|' as the hand-typed form.
+function parseBatchLine(line) {
+  const cols = (line.includes('\t') ? line.split('\t') : line.split('|')).map((c) => c.trim());
+  const sev = SEVERITY_ALIASES[(cols[4] || '').toLowerCase()] || SEVERITY_ALIASES[cols[4] || ''];
+  return {
+    title: (cols[0] || '').slice(0, 200),
+    description: cols[1] || '(批量提交)',
+    expected: cols[2] || '',
+    actual: cols[3] || '',
+    severity: sev || null,
+  };
+}
+
+function looksLikeHeader(line) {
+  const first = line.toLowerCase();
+  return HEADER_WORDS.filter((w) => first.includes(w)).length >= 2;
+}
+
+async function submitBatch(name) {
+  let lines = $batchLines.value.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length > 0 && looksLikeHeader(lines[0])) lines = lines.slice(1);
+  if (lines.length === 0) { showResult('err', '批量清单是空的'); return; }
+  const okIds = [];
+  const failed = [];
+  for (let i = 0; i < lines.length; i++) {
+    const parsed = parseBatchLine(lines[i]);
+    if (!parsed.title) { failed.push('第' + (i + 1) + '行: 标题为空,跳过'); continue; }
+    showResult('ok', '提交中 ' + (i + 1) + '/' + lines.length + ' …');
+    const payload = Object.assign(basePayload(name), {
+      title: parsed.title,
+      description: parsed.description,
+      expected: parsed.expected,
+      actual: parsed.actual,
+    });
+    if (parsed.severity) payload.severity = parsed.severity; // per-row column wins over the dropdown
+    const r = await postBug(payload);
+    if (r.ok && r.body && typeof r.body.task_id === 'string') {
+      okIds.push(r.body.task_id);
+    } else if (r.status === 429) {
+      failed.push('第' + (i + 1) + '行起被限流(每分钟 30 条),剩余 ' + (lines.length - i) + ' 条请稍等一分钟后重新提交');
+      break;
+    } else {
+      failed.push('第' + (i + 1) + '行: ' + ((r.body && r.body.message) || ('HTTP ' + r.status)));
+    }
+  }
+  if (failed.length === 0) {
+    showResult('ok', '批量提交完成,共 ' + okIds.length + ' 条: ' + okIds.join(', '));
+    $batchLines.value = '';
+  } else {
+    showResult('err', '成功 ' + okIds.length + ' 条' + (okIds.length ? '(' + okIds.join(', ') + ')' : '') + ';' + failed.join(';'));
+  }
+}
+
+// Project/module dropdowns from the board's real vocabulary (/api/report-meta).
+// All option text goes through textContent — never markup.
+let metaProjects = [];
+
+function fillSelect(select, items, makeOption) {
+  select.replaceChildren();
+  for (const item of items) select.appendChild(makeOption(item));
+}
+
+function refreshModules() {
+  const entry = metaProjects.find((p) => p.project === $project.value);
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = '(不确定 / 整体)';
+  $module.replaceChildren(none);
+  for (const m of (entry ? entry.modules : [])) {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    $module.appendChild(opt);
+  }
+}
+
+async function loadMeta() {
+  try {
+    const res = await fetch('/api/report-meta', { headers: { accept: 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const body = await res.json();
+    metaProjects = Array.isArray(body.projects) ? body.projects : [];
+  } catch (_ignored) {
+    metaProjects = [];
+  }
+  if (metaProjects.length > 0) {
+    fillSelect($project, metaProjects, (p) => {
+      const opt = document.createElement('option');
+      opt.value = p.project;
+      opt.textContent = p.project;
+      return opt;
+    });
+  } else {
+    // Board unreachable or empty: degrade the select into a free-text input.
+    const input = document.createElement('input');
+    input.id = 'f-project';
+    input.name = 'project';
+    input.type = 'text';
+    input.required = true;
+    $project.replaceWith(input);
+  }
+  refreshModules();
+}
+
+$project.addEventListener('change', refreshModules);
+loadMeta();
 
 function showResult(kind, text) {
   $result.hidden = false;
@@ -149,33 +387,28 @@ $form.addEventListener('submit', async (event) => {
   try {
     const name = $name.value.trim();
     localStorage.setItem(NAME_KEY, name);
-    const res = await fetch('/api/bugs', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({
-        name: name,
-        project: $project.value.trim(),
-        title: $title.value.trim(),
-        severity: $severity.value,
-        description: $description.value.trim(),
-      }),
-    });
-    if (res.ok) {
-      let taskId = '';
-      try {
-        const body = await res.json();
-        if (body && typeof body.task_id === 'string') taskId = body.task_id;
-      } catch (_ignored) { /* 2xx without parseable body: still a success */ }
-      showResult('ok', '已提交' + (taskId ? '，bug 编号 ' + taskId : '') + '，可在看板跟踪');
-      $form.reset();
-      $name.value = name; // keep name after clearing the form
+    if ($batch.checked) {
+      await submitBatch(name);
+      return;
+    }
+    const r = await postBug(Object.assign(basePayload(name), {
+      title: $title.value.trim(),
+      description: $description.value.trim(),
+      expected: $expected.value.trim(),
+      actual: $actual.value.trim(),
+    }));
+    if (r.ok) {
+      const taskId = r.body && typeof r.body.task_id === 'string' ? r.body.task_id : '';
+      showResult('ok', '已提交' + (taskId ? '，bug 编号 ' + taskId : '') + '，继续报下一条(项目/模块/严重程度已保留)');
+      // Deliberately NOT form.reset(): same-module bug streaks are the common
+      // case — keep project/module/severity, clear only the per-bug fields.
+      $title.value = '';
+      $description.value = '';
+      $expected.value = '';
+      $actual.value = '';
+      $title.focus();
     } else {
-      let msg = 'HTTP ' + res.status;
-      try {
-        const body = await res.json();
-        if (body && typeof body.message === 'string') msg = body.message;
-      } catch (_ignored) { /* non-JSON error body: keep HTTP status */ }
-      showResult('err', '提交失败: ' + msg);
+      showResult('err', '提交失败: ' + ((r.body && typeof r.body.message === 'string') ? r.body.message : 'HTTP ' + r.status));
     }
   } catch (err) {
     showResult('err', '提交失败: ' + (err instanceof Error ? err.message : String(err)));
