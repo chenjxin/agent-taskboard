@@ -17,7 +17,7 @@ import { buildApp } from '../../src/http/app.js';
 import type { OverlapCounterpart, TaskRow, CommentRow } from '../../src/core/types.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const STATIC_OPTS = { webDir: join(ROOT, 'src/web'), adoptionDir: join(ROOT, 'adoption') };
+const STATIC_OPTS = { webDir: join(ROOT, 'src/web'), adoptionDir: join(ROOT, 'adoption'), changelogPath: join(ROOT, 'CHANGELOG.md') };
 const EXTERNAL = process.env['BOARD_URL'];
 const PROJECT = `smoke-${process.pid}`;
 

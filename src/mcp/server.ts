@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { appVersion } from '../config.js';
 import type { BoardDeps } from './deps.js';
 import { SERVER_INSTRUCTIONS } from './descriptions.js';
 import { registerAddComment } from './tools/addComment.js';
@@ -19,7 +20,7 @@ import { registerUpdateTask } from './tools/updateTask.js';
  */
 export function buildMcpServer(deps: BoardDeps): McpServer {
   const server = new McpServer(
-    { name: 'task-board', version: '1.1.0' },
+    { name: 'task-board', version: appVersion() },
     { instructions: SERVER_INSTRUCTIONS },
   );
   registerRegisterTask(server, deps);

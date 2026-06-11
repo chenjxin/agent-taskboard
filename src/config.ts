@@ -1,4 +1,13 @@
 /** The ONLY place process.env is read. */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** App version from package.json — works from src/ (dev) and dist/ (build), both one level under the root. */
+export function appVersion(): string {
+  const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+  return (JSON.parse(readFileSync(pkgPath, 'utf8')) as { version: string }).version;
+}
 
 export interface Config {
   port: number;

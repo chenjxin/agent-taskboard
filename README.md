@@ -32,7 +32,9 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 |---|---|
 | `POST /mcp` | MCP Streamable HTTP(无状态,每请求独立;GET/DELETE 返回 405) |
 | `GET /board` | 只读 Web 看板(给人看,10s 轮询) |
-| `GET /onboard` | 接入说明页:展示 adoption/ 全部片段(地址自动替换为当前访问地址),同事打开即可照做 |
+| `GET /onboard` | 接入说明页(给人看):展示 adoption/ 全部片段(地址自动替换),照步骤操作 |
+| `GET /setup` | **agent 自助接入指南**(给 agent 看的 Markdown):把这个地址发给同事的 agent,它阅读后自主完成全部配置 |
+| `GET /changelog` | 版本清单与功能说明(CHANGELOG.md 在线版) |
 | `GET /adoption/<name>` | 白名单方式提供 adoption 片段原文(/onboard 页面的数据源) |
 | `GET /api/board` | 看板 JSON(也供 adoption hook 使用) |
 | `GET /api/standup` | 站会摘要 JSON(`?project=&iteration=&hours=`,`hours` 默认 24、上限 168;与 `get_standup` 工具同一计算) |
@@ -68,7 +70,9 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 
 接入材料都在 [`adoption/`](adoption/) 目录,三步完成:
 
-> 最快路径:浏览器打开 **`http://<NAS地址>:8765/onboard`**,页面已把下面所有片段准备好(地址已替换、可一键复制),照步骤 ①-⑤ 操作即可。以下为对应的仓库内文件说明。
+> **最快路径(推荐):对你的 agent 说一句话** —— "读 `http://<NAS地址>:8765/setup`,按里面的步骤完成接入"。该文档是写给 agent 看的,它会自主完成 MCP 注册、agent_id 约定、CLAUDE.md 协议写入、hooks 安装和验证。
+>
+> 人类想自己动手:浏览器打开 **`http://<NAS地址>:8765/onboard`**,页面已把所有片段准备好(地址已替换、可一键复制),照步骤 ①-⑤ 操作。以下为对应的仓库内文件说明。
 
 1. **挂上 MCP server**:把 `adoption/mcp-config.snippet.json` 的内容合并进项目(或全局)的 `.mcp.json`,URL 改成你的 NAS 地址,例如 `http://nas.lan:8765/mcp`。
 2. **写入协议**:把 `adoption/CLAUDE.md.snippet.md` 的内容贴进项目 `CLAUDE.md`,并把其中的 `agent_id` 固定为你自己的(`人名/agent 名`)。它包含接到任务时的标准流程、`.claude/board-task.json` 持久化约定(worktree 本地,记得 gitignore)、以及"不要把板子当任务队列"的红线。

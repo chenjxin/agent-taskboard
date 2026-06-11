@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import express, { type Express, type RequestHandler, type Response } from 'express';
+import express, { type Express, type Request, type RequestHandler, type Response } from 'express';
+import { appVersion } from '../config.js';
+import { schemaVersion } from '../db/connection.js';
 import { buildMcpServer } from '../mcp/server.js';
 import type { BoardDeps } from '../mcp/deps.js';
 import { buildStandup } from '../mcp/tools/getStandup.js';
@@ -9,10 +12,17 @@ import { bearerAuth } from './auth.js';
 
 export interface AppOptions {
   authToken?: string | undefined;
-  /** Absolute dir containing board.html / onboard.html (src/web in dev, dist/web in the build). */
+  /** Absolute dir containing board.html / onboard.html / setup.md (src/web in dev, dist/web in the build). */
   webDir: string;
   /** Absolute dir containing the adoption kit files (repo adoption/ in dev, dist/adoption in the build). */
   adoptionDir: string;
+  /** Absolute path to CHANGELOG.md (repo root in dev, dist/ in the build). */
+  changelogPath: string;
+}
+
+/** The origin the caller actually used — substituted into the /setup doc (trusted LAN, no proxy). */
+function requestOrigin(req: Request): string {
+  return `${req.protocol}://${req.get('host') ?? 'localhost'}`;
 }
 
 /** Whitelist: URL name -> path relative to adoptionDir. Nothing else is reachable. */
@@ -133,8 +143,24 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
     res.sendFile(join(opts.adoptionDir, rel));
   });
 
+  // Agent self-serve onboarding: hand any agent this URL and it can configure
+  // itself — the placeholder origin is substituted with the address it used.
+  app.get(['/setup', '/setup.md'], auth, (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.type('text/markdown; charset=utf-8');
+    const md = readFileSync(join(opts.webDir, 'setup.md'), 'utf8');
+    res.send(md.replaceAll('__BOARD_ORIGIN__', requestOrigin(req)));
+  });
+
+  // Version list + feature notes (CHANGELOG.md verbatim).
+  app.get('/changelog', auth, (_req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.type('text/plain; charset=utf-8');
+    res.sendFile(opts.changelogPath);
+  });
+
   app.get('/healthz', (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, version: appVersion(), schema_version: schemaVersion(deps.db) });
   });
   app.get('/', (_req, res) => {
     res.redirect('/board');

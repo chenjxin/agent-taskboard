@@ -9,6 +9,7 @@ import { makeTestBoard } from './helpers.js';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const WEB_DIR = join(ROOT, 'src/web');
 const ADOPTION_DIR = join(ROOT, 'adoption');
+const CHANGELOG = join(ROOT, 'CHANGELOG.md');
 
 let server: Server | undefined;
 afterEach(() => {
@@ -27,7 +28,7 @@ async function listen(app: ReturnType<typeof buildApp>): Promise<string> {
 describe('GET /onboard', () => {
   it('serves the onboarding page with the same security headers as /board', async () => {
     const b = await makeTestBoard();
-    const app = buildApp(b.deps, { webDir: WEB_DIR, adoptionDir: ADOPTION_DIR });
+    const app = buildApp(b.deps, { webDir: WEB_DIR, adoptionDir: ADOPTION_DIR, changelogPath: CHANGELOG });
     const base = await listen(app);
 
     const res = await fetch(`${base}/onboard`);
@@ -43,7 +44,7 @@ describe('GET /onboard', () => {
 describe('GET /adoption/:name', () => {
   it('serves exactly the whitelisted adoption files as plain text', async () => {
     const b = await makeTestBoard();
-    const app = buildApp(b.deps, { webDir: WEB_DIR, adoptionDir: ADOPTION_DIR });
+    const app = buildApp(b.deps, { webDir: WEB_DIR, adoptionDir: ADOPTION_DIR, changelogPath: CHANGELOG });
     const base = await listen(app);
 
     const mcp = await fetch(`${base}/adoption/mcp-config.snippet.json`);
@@ -66,7 +67,7 @@ describe('GET /adoption/:name', () => {
 
   it('404s anything off the whitelist (no traversal)', async () => {
     const b = await makeTestBoard();
-    const app = buildApp(b.deps, { webDir: WEB_DIR, adoptionDir: ADOPTION_DIR });
+    const app = buildApp(b.deps, { webDir: WEB_DIR, adoptionDir: ADOPTION_DIR, changelogPath: CHANGELOG });
     const base = await listen(app);
 
     expect((await fetch(`${base}/adoption/evil.txt`)).status).toBe(404);
@@ -76,7 +77,7 @@ describe('GET /adoption/:name', () => {
 
   it('sits behind bearer auth when AUTH_TOKEN is set', async () => {
     const b = await makeTestBoard();
-    const app = buildApp(b.deps, { webDir: WEB_DIR, adoptionDir: ADOPTION_DIR, authToken: 'sekret' });
+    const app = buildApp(b.deps, { webDir: WEB_DIR, adoptionDir: ADOPTION_DIR, changelogPath: CHANGELOG, authToken: 'sekret' });
     const base = await listen(app);
 
     expect((await fetch(`${base}/onboard`)).status).toBe(401);

@@ -9,7 +9,7 @@ import type { TaskRow } from '../../src/core/types.js';
 import { makeTestBoard, registerArgs, T0, HOUR } from './helpers.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const STATIC_OPTS = { webDir: join(ROOT, 'src/web'), adoptionDir: join(ROOT, 'adoption') };
+const STATIC_OPTS = { webDir: join(ROOT, 'src/web'), adoptionDir: join(ROOT, 'adoption'), changelogPath: join(ROOT, 'CHANGELOG.md') };
 
 let server: Server | undefined;
 afterEach(() => {
@@ -71,7 +71,7 @@ describe('GET /api/board over HTTP', () => {
     expect(html).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML/);
 
     const health = await fetch(`${base}/healthz`);
-    expect(await health.json()).toEqual({ ok: true });
+    expect(await health.json()).toMatchObject({ ok: true, schema_version: 2 });
 
     const standup = await fetch(`${base}/api/standup?hours=48`);
     expect(standup.status).toBe(200);

@@ -101,6 +101,10 @@
   </div>
 </header>
 <main>
+<section class="step" style="border-left:3px solid var(--accent,#7aa2f7);">
+  <h2>⚡ 更快的方式:让 agent 自己来</h2>
+  <p>不想手动操作?对你的 Claude Code 说:「读 <code id="setup-url"></code>,按里面的步骤完成接入」。该文档是写给 agent 看的,它会自主完成下面 ①-⑤ 的全部步骤。</p>
+</section>
   <p class="intro">
     本页说明如何把一个仓库里的 Claude Code agent 接入任务看板。下方所有片段实时读取自看板服务器上的
     <code>adoption/</code> 目录(单一事实来源);片段中的看板地址已自动替换为当前浏览器访问的地址
@@ -250,6 +254,12 @@ loadSnippet('snippet-hooks-settings', '/adoption/hooks-settings.snippet.json',
   'settings.snippet.json → .claude/settings.json');
 loadSnippet('snippet-board-check', '/adoption/board-check.sh',
   'board-check.sh → .claude/hooks/board-check.sh');
+</script>
+<script>
+(function () {
+  var u = document.getElementById('setup-url');
+  if (u) u.textContent = location.origin + '/setup';
+})();
 </script>
 </body>
 </html>

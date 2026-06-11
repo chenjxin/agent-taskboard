@@ -66,7 +66,7 @@ fi
 slug="$(printf '%s' "$slug" | tr '[:upper:]' '[:lower:]')"
 
 # Fetch this agent's open tasks. 2s timeout; ANY failure -> silent success.
-body="$(curl -m 2 -sf -G "$BOARD_URL/api/board" \
+body="$(curl --noproxy '*' -m 2 -sf -G "$BOARD_URL/api/board" \
   --data-urlencode "owner=$AGENT_ID" 2>/dev/null)" || exit 0
 if [ -z "$body" ]; then
   exit 0

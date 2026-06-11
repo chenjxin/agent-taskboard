@@ -10,7 +10,7 @@ FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
-COPY tsconfig.json tsconfig.build.json ./
+COPY tsconfig.json tsconfig.build.json CHANGELOG.md ./
 COPY src ./src
 COPY adoption ./adoption
 # build = tsc -p tsconfig.build.json + copy schema.sql, web pages, adoption kit into dist/

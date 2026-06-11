@@ -27,10 +27,13 @@ const deps = { db, staleTtlHours: config.staleTtlHours, now: () => Date.now() };
 // Works in dev (tsx on src/) and in the build (assets copied into dist/).
 const base = dirname(fileURLToPath(import.meta.url));
 const webDir = join(base, 'web');
-// dist/adoption in the build; repo-root adoption/ when running from src/.
+// dist/adoption + dist/CHANGELOG.md in the build; repo root when running from src/.
 const adoptionDir = existsSync(join(base, 'adoption')) ? join(base, 'adoption') : join(base, '..', 'adoption');
+const changelogPath = existsSync(join(base, 'CHANGELOG.md'))
+  ? join(base, 'CHANGELOG.md')
+  : join(base, '..', 'CHANGELOG.md');
 
-const app = buildApp(deps, { authToken: config.authToken, webDir, adoptionDir });
+const app = buildApp(deps, { authToken: config.authToken, webDir, adoptionDir, changelogPath });
 const server = app.listen(config.port, () => {
   console.log(
     `[${new Date().toISOString()}] task-board listening on :${config.port} ` +
