@@ -42,7 +42,9 @@ export function registerAddComment(server: McpServer, deps: BoardDeps): void {
               ? 'Boundary recorded. Also call update_scope on YOUR OWN task so the overlap engine reflects the agreed split.'
               : task.owner_agent_id === args.agent_id
                 ? null
-                : `The owner (${task.owner_agent_id}) will see this on their next heartbeat or get_task.`,
+                : task.owner_agent_id === null
+                  ? 'This is an unclaimed backlog item — whoever claims it receives the full thread (including this comment) in the claim_task response.'
+                  : `The owner (${task.owner_agent_id}) will see this on their next heartbeat or get_task.`,
         });
       }),
   );

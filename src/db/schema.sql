@@ -1,12 +1,15 @@
--- Agent Task Board schema v1. All timestamps are INTEGER unix milliseconds,
--- written by the application (millisecond precision matters: the heartbeat
--- activity cursor uses strict '>' comparisons).
+-- Agent Task Board schema v2 baseline (fresh installs). Existing v1 databases
+-- are upgraded by the versioned migrations in src/db/connection.ts, which
+-- source their CREATE statements FROM THIS FILE at runtime (single source of
+-- truth) -- a test asserts migrated schema == fresh baseline. Do not put a
+-- semicolon inside any comment: statements are split on them.
+-- All timestamps are INTEGER unix milliseconds, written by the application.
 
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2');
 
 -- Self-reported identities ('human/agent'), auto-upserted on every tool call.
 CREATE TABLE IF NOT EXISTS agents (
@@ -15,20 +18,25 @@ CREATE TABLE IF NOT EXISTS agents (
   last_seen_at  INTEGER NOT NULL
 );
 
+-- owner NULL = unclaimed backlog item (legal only while status is 'planned').
 -- No stale column: staleness is derived at read time from last_heartbeat_at + TTL.
 CREATE TABLE IF NOT EXISTS tasks (
-  id                TEXT PRIMARY KEY,
-  project           TEXT NOT NULL,
-  title             TEXT NOT NULL,
-  description       TEXT NOT NULL DEFAULT '',
-  branch            TEXT,
-  owner_agent_id    TEXT NOT NULL REFERENCES agents(agent_id),
-  status            TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'done', 'abandoned')),
-  closing_note      TEXT,
-  created_at        INTEGER NOT NULL,
-  updated_at        INTEGER NOT NULL,
-  closed_at         INTEGER,
-  last_heartbeat_at INTEGER NOT NULL
+  id                  TEXT PRIMARY KEY,
+  project             TEXT NOT NULL,
+  title               TEXT NOT NULL,
+  description         TEXT NOT NULL DEFAULT '',
+  branch              TEXT,
+  owner_agent_id      TEXT REFERENCES agents(agent_id),
+  created_by_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+  status              TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('planned', 'active', 'done', 'abandoned')),
+  iteration           TEXT,
+  closing_note        TEXT,
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL,
+  claimed_at          INTEGER,
+  closed_at           INTEGER,
+  last_heartbeat_at   INTEGER NOT NULL,
+  CHECK (status != 'active' OR owner_agent_id IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_status ON tasks(owner_agent_id, status);
@@ -49,8 +57,19 @@ CREATE TABLE IF NOT EXISTS comments (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id         TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   author_agent_id TEXT NOT NULL,
-  kind            TEXT NOT NULL CHECK (kind IN ('comment', 'boundary_agreement', 'overlap_notice')),
+  kind            TEXT NOT NULL CHECK (kind IN ('comment', 'boundary_agreement', 'overlap_notice', 'dependency_notice')),
   body            TEXT NOT NULL,
   created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_comments_task_created ON comments(task_id, created_at);
+
+-- task_id depends on depends_on_task_id ("blocked by"). Informational only.
+CREATE TABLE IF NOT EXISTS task_deps (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id            TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at         INTEGER NOT NULL,
+  UNIQUE (task_id, depends_on_task_id),
+  CHECK (task_id != depends_on_task_id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_deps_reverse ON task_deps(depends_on_task_id);

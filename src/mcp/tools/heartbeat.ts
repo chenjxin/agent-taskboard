@@ -24,16 +24,21 @@ export function registerHeartbeat(server: McpServer, deps: BoardDeps): void {
         const now = deps.now();
         const task = getTask(deps.db, args.task_id);
         if (!task) throw new BoardError('TASK_NOT_FOUND', `No task with id '${args.task_id}'.`);
-        if (task.owner_agent_id !== args.agent_id) {
-          throw new BoardError(
-            'NOT_TASK_OWNER',
-            `Task '${task.id}' is owned by ${task.owner_agent_id}, not you (${args.agent_id}).`,
-          );
+        // Status before ownership: a planned task may be unowned, and the right
+        // hint there is "claim it", not a confusing owner mismatch.
+        if (task.status === 'planned') {
+          throw new BoardError('TASK_NOT_ACTIVE', `Task '${task.id}' is still planned — no heartbeat yet.`);
         }
         if (task.status !== 'active') {
           throw new BoardError(
             'TASK_ALREADY_CLOSED',
             `Task '${task.id}' is ${task.status} — closed tasks need no heartbeat.`,
+          );
+        }
+        if (task.owner_agent_id !== args.agent_id) {
+          throw new BoardError(
+            'NOT_TASK_OWNER',
+            `Task '${task.id}' is owned by ${task.owner_agent_id}, not you (${args.agent_id}).`,
           );
         }
 

@@ -57,7 +57,7 @@ describe('end-to-end collision flow over Streamable HTTP', () => {
 
     // listTools proves the stateless handshake; instructions arrive at init.
     const tools = await alice.listTools();
-    expect(tools.tools).toHaveLength(8);
+    expect(tools.tools).toHaveLength(11);
 
     // Alice claims auth work.
     const aReg = structured(
@@ -139,5 +139,79 @@ describe('end-to-end collision flow over Streamable HTTP', () => {
 
     await alice.close();
     await bob.close();
+  }, 30_000);
+
+  it('v1.1 agile flow: backlog -> claim (thread delivered) -> dependency close notice -> standup', async () => {
+    const alice = await connect('smoke2-alice');
+    const carol = await connect('smoke2-carol');
+    const P = `${PROJECT}-agile`;
+
+    const aReg = structured(
+      (await alice.callTool({
+        name: 'register_task',
+        arguments: {
+          agent_id: 'alice/claude',
+          project: P,
+          title: 'extract session api',
+          scope: [{ path_glob: 'src/session/**', module: 'session' }],
+        },
+      })) as CallToolResult,
+    );
+    const aId = (aReg['task'] as TaskRow).id;
+
+    // Alice files a backlog item depending on her task; nobody is notified.
+    const filed = structured(
+      (await alice.callTool({
+        name: 'register_task',
+        arguments: {
+          agent_id: 'alice/claude',
+          project: P,
+          title: 'migrate callers to new session api',
+          start_as: 'backlog',
+          scope: [{ path_glob: 'src/session/**' }],
+          depends_on: [aId],
+          iteration: '2026w24',
+        },
+      })) as CallToolResult,
+    );
+    const bId = (filed['task'] as TaskRow).id;
+    expect((filed['task'] as TaskRow).owner_agent_id).toBeNull();
+
+    // Carol claims it and receives the full pre-claim thread + a live overlap report.
+    const claimed = structured(
+      (await carol.callTool({ name: 'claim_task', arguments: { agent_id: 'carol/claude', task_id: bId } })) as CallToolResult,
+    );
+    expect((claimed['task'] as TaskRow).owner_agent_id).toBe('carol/claude');
+    expect((claimed['overlap_report'] as { counterparts: OverlapCounterpart[] }).counterparts[0]!.task_id).toBe(aId);
+
+    // Alice finishes the prerequisite; Carol's next heartbeat surfaces the dependency notice.
+    await alice.callTool({
+      name: 'update_status',
+      arguments: { agent_id: 'alice/claude', task_id: aId, status: 'done', closing_note: 'session api merged' },
+    });
+    const beat = structured(
+      (await carol.callTool({ name: 'heartbeat', arguments: { agent_id: 'carol/claude', task_id: bId } })) as CallToolResult,
+    );
+    const depNotices = (beat['activity'] as CommentRow[]).filter((c) => c.kind === 'dependency_notice');
+    expect(depNotices).toHaveLength(1);
+    expect(depNotices[0]!.body).toContain(`DEPENDENCY RESOLVED task:${aId}`);
+
+    // Standup sees the whole story (tool + HTTP endpoint agree on shape).
+    const standup = structured(
+      (await carol.callTool({ name: 'get_standup', arguments: { agent_id: 'carol/claude', project: P } })) as CallToolResult,
+    );
+    const proj = (standup['standup'] as { projects: Array<{ project: string; completed: unknown[]; started: unknown[] }> })
+      .projects.find((p) => p.project === P)!;
+    expect(proj.completed).toHaveLength(1);
+    expect(proj.started.length).toBeGreaterThanOrEqual(2); // alice's register-active + carol's claim
+    const httpStandup = (await (await fetch(`${base}/api/standup?project=${P}`)).json()) as { projects: unknown[] };
+    expect(httpStandup.projects).toHaveLength(1);
+
+    await carol.callTool({
+      name: 'update_status',
+      arguments: { agent_id: 'carol/claude', task_id: bId, status: 'done', closing_note: 'smoke complete' },
+    });
+    await alice.close();
+    await carol.close();
   }, 30_000);
 });

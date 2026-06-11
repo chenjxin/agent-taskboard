@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import express, { type Express, type RequestHandler, type Response } from 'express';
 import { buildMcpServer } from '../mcp/server.js';
 import type { BoardDeps } from '../mcp/deps.js';
+import { buildStandup } from '../mcp/tools/getStandup.js';
 import { buildBoardData } from '../web/boardData.js';
 import { bearerAuth } from './auth.js';
 
@@ -90,6 +91,21 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
         project: queryString(req.query['project']),
         owner: queryString(req.query['owner']),
         status: queryString(req.query['status']),
+      }),
+    );
+  });
+
+  // Standup digest JSON (same computation as the get_standup MCP tool).
+  app.get('/api/standup', auth, (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'self'");
+    const rawHours = Number(queryString(req.query['hours']) ?? '24');
+    const windowHours = Number.isFinite(rawHours) ? Math.min(Math.max(Math.trunc(rawHours), 1), 168) : 24;
+    res.json(
+      buildStandup(deps.db, deps.staleTtlHours, deps.now(), {
+        project: queryString(req.query['project']),
+        iteration: queryString(req.query['iteration']),
+        windowHours,
       }),
     );
   });

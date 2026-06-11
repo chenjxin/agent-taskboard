@@ -1,10 +1,10 @@
 # Agent Task Board
 
-团队 agent 任务协调板。团队成员都通过 AI agent(主要是 Claude Code)开发时,互相看不见对方的进度:重复劳动、边界冲突到提交代码时才暴露。本工具部署在 NAS(内网)上:agent 开工时登记任务,其他 agent **接到任务时**先查一眼;任务声明边界(路径 glob + 模块名),后来者登记/查询时同步拿到重叠信号 + 对方是谁、在做什么、最近一次更新时间,双方在任务下留言协商边界与接口规范,把冲突消灭在写代码之前。**设计红线:这是信息板,永不编排、永不分派**——没有 assign / queue / next-task,staleness 只是提示,检查只返回信息和严重级别,从不裁决。
+团队 agent 任务协调板。团队成员都通过 AI agent(主要是 Claude Code)开发时,互相看不见对方的进度:重复劳动、边界冲突到提交代码时才暴露。本工具部署在 NAS(内网)上:agent 开工时登记任务,其他 agent **接到任务时**先查一眼;任务声明边界(路径 glob + 模块名),后来者登记/查询时同步拿到重叠信号 + 对方是谁、在做什么、最近一次更新时间,双方在任务下留言协商边界与接口规范,把冲突消灭在写代码之前。**设计红线:这是信息板,永不编排、永不分派**——看板有 backlog,但无主条目只能被认领(claim 永远是人类决定后 agent 自愿执行),从不被推给任何人;没有 assign / 没有 next-task,staleness 只是提示,检查只返回信息和严重级别,从不裁决。
 
 架构一行话:MCP Server(Streamable HTTP,无状态)+ SQLite(WAL)+ 只读 Web 看板,全部跑在一个容器里,端口 `8765`。
 
-v1 没有 IM/webhook 推送:重叠信息对后来者(B)内嵌在工具响应里,对在位者(A)以系统 `overlap_notice` 留言形式贴在其任务下,A 下次 `heartbeat` / `get_task` 时拉取到。
+v1.1 仍没有 IM/webhook 推送,通知全部走拉取:重叠信息对后来者(B)内嵌在工具响应里,对在位者(A)以系统 `overlap_notice` 留言形式贴在其任务下;依赖关闭通知同样以系统留言贴在依赖方任务下;A 下次 `heartbeat` / `get_task` 时拉取到。
 
 ## 快速开始
 
@@ -35,22 +35,34 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 | `GET /onboard` | 接入说明页:展示 adoption/ 全部片段(地址自动替换为当前访问地址),同事打开即可照做 |
 | `GET /adoption/<name>` | 白名单方式提供 adoption 片段原文(/onboard 页面的数据源) |
 | `GET /api/board` | 看板 JSON(也供 adoption hook 使用) |
+| `GET /api/standup` | 站会摘要 JSON(`?project=&iteration=&hours=`,`hours` 默认 24、上限 168;与 `get_standup` 工具同一计算) |
 | `GET /healthz` | 健康检查 |
 
-## MCP 工具(8 个)
+## MCP 工具(11 个)
 
 身份为自报的 `agent_id`,约定格式 `人名/agent 名`(如 `alice/claude-code`),无注册流程。
 
 | 工具 | 类型 | 说明 |
 |---|---|---|
-| `register_task` | 写 | 登记任务即认领。单事务写入 task + scopes,响应内嵌重叠报告与警告(did-you-mean、broad glob、疑似重复等),并自动在重叠双方任务下贴对称 `overlap_notice` 系统留言 |
-| `list_tasks` | 只读 | 按 `project` / `status`(默认 `active`)/ `owner` 过滤;行内带派生 `stale` 标志;上限 200 行。`owner` 传自己可在会话恢复后找回自己的任务 |
+| `register_task` | 写 | 登记任务。默认 `start_as='active'`:**登记即认领**;`'planned'` 预告自己将来的工作;`'backlog'` 登记无主待认领条目。单事务写入 task + scopes,响应内嵌重叠报告与警告(did-you-mean、broad glob、疑似重复等);active 登记自动在重叠双方任务下贴对称 `overlap_notice` 系统留言,planned/backlog 登记不通知任何人——通知在认领那一刻才触发 |
+| `claim_task` | 写 | 认领 planned/backlog 条目:设认领者为 owner、状态翻成 `active`,返回认领前的**完整留言线程**(必读)、scope 列表和新鲜重叠报告——重叠通知在此刻触发。没有 un-claim:认领错了用 `update_status` 置 `abandoned` 再重新登记 |
+| `list_tasks` | 只读 | 按 `project` / `status`(**默认 `open` = active + planned**,看每行 `status` 字段区分)/ `owner` / `iteration` 过滤;行内带派生 `stale` / `blocked` 标志;上限 200 行。`owner` 传自己可在会话恢复后找回自己的任务 |
 | `get_task` | 只读 | 完整任务字段 + scope 列表 + 全部留言线程 |
-| `check_overlap` | 只读 | 干跑:不登记、不贴留言、可反复调用。**接到任务后第一步先调它** |
-| `update_scope` | 写,**owner-only** | scope 全量替换,返回新重叠报告;HIGH/MEDIUM 触发对称通知(同一任务对仅在严重级别新增或升级时再贴,防刷屏) |
+| `get_standup` | 只读 | 站会摘要:窗口期内(默认 24h)完成 / 放弃 / 开工 / 新增 planned,加上当前 blocked、stale 任务与重叠 / 边界协议计数。接任务时鸟瞰一眼,或人类问"团队在干嘛"时用;单任务细节用 `get_task` |
+| `check_overlap` | 只读 | 干跑:不登记、不贴留言、可反复调用(对手含 active 与 planned 条目)。**接到任务后第一步先调它** |
+| `update_task` | 写,**owner-only** | 元数据补丁:title / description / branch / `iteration`(空串清除)/ `depends_on`(**全量替换**,要保留的链接也要带上)。状态用 `update_status`,scope 用 `update_scope`。依赖纯信息性,从不阻塞 |
+| `update_scope` | 写,**owner-only** | scope 全量替换,返回新重叠报告;HIGH/MEDIUM 触发对称通知(同一任务对仅在严重级别新增或升级时再贴,防刷屏;planned 任务静默至认领) |
 | `add_comment` | 写 | 留言协商。`kind`: `comment` / `boundary_agreement`(`overlap_notice` 为系统保留,提交即报错);边界收敛后用 `boundary_agreement` 记录结论 |
-| `update_status` | 写,**owner-only** | 关闭任务:`done` / `abandoned`,**`closing_note` 必填**(关掉的任务对下一个陌生 agent 才有价值)。这是唯一关闭任务的途径,服务端永不自动关闭 |
-| `heartbeat` | 写(游标) | 推进任务心跳,返回自上次心跳以来他人的新留言(activity)——这就是拉取式通知通道,`overlap_notice` 天然流经这里 |
+| `update_status` | 写,**owner-only**(**无主 backlog 条目任何人可关**,服务端记录是谁) | 关闭任务:`done` / `abandoned`,**`closing_note` 必填**(关掉的任务对下一个陌生 agent 才有价值)。这是唯一关闭任务的途径,服务端永不自动关闭。关闭时自动在每个声明 `depends_on` 本任务的任务下贴系统通知(done → DEPENDENCY RESOLVED,abandoned → ABANDONED) |
+| `heartbeat` | 写(游标) | 推进任务心跳,返回自上次心跳以来他人的新留言(activity)——这就是拉取式通知通道,`overlap_notice` 和依赖关闭通知天然流经这里。planned 任务无心跳,先 `claim_task` |
+
+## v1.1 敏捷功能
+
+- **planned/backlog 生命周期**:`planned --claim_task--> active --update_status--> done|abandoned`。`register_task` 传 `start_as='planned'` 预告自己将来的工作,`'backlog'` 登记无主条目人人可认领;planned/backlog 登记时不通知任何人,通知在 `claim_task` 认领那一刻触发。无 un-claim:认领错了 `update_status` 置 `abandoned` + 重新登记为 backlog。
+- **迭代标签**:`iteration` 是自由文本 sprint 标签(如 `2026w24`),精确匹配才能分组/过滤——全队统一拼写,照抄 `list_tasks` 里已有的写法;`update_task` 可改,空串清除。
+- **依赖通知**:`depends_on` 纯信息性,从不机械阻塞;被依赖任务关闭时,系统在每个依赖方任务下贴通知(RESOLVED / ABANDONED),依赖方下次 `heartbeat` 拉到。
+- **站会摘要**:`get_standup` 工具 / `GET /api/standup` 端点,默认回看 24 小时(上限一周)。
+- **红线新表述**:看板有 backlog,但**永不指派**——claim 永远是人类决定后 agent 自愿执行;不要把看板当待办队列自动找活。依旧没有 webhook、没有指派、没有 un-claim。
 
 ## 团队接入
 
@@ -66,12 +78,16 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 
 ```text
 接到任务
+  → (可选)get_standup     # 鸟瞰过去 24h:谁完成、谁开工、谁卡住
   → project slug:git remote get-url origin 的 basename,去 .git、转小写
   → check_overlap          # 干跑,看看谁在这片区域
-  → register_task          # 登记即认领;把返回的 task id 存入 .claude/board-task.json
+  → 任务已在看板上(planned/backlog 条目)?
+      是 → claim_task      # 认领;响应含认领前完整留言线程(必读)+ 新鲜重叠报告
+      否 → register_task   # 登记即认领
+    把返回的 task id 存入 .claude/board-task.json
   → (有 HIGH/MEDIUM 重叠)在对方任务下 add_comment 协商;收敛后 boundary_agreement 记录边界
-  → 续作时 heartbeat       # 拉取他人新留言(含系统 overlap_notice)
-  → 完成时 update_status   # done/abandoned + closing_note
+  → 续作时 heartbeat       # 拉取他人新留言(含系统 overlap_notice、依赖关闭通知)
+  → 完成时 update_status   # done/abandoned + closing_note(自动通知 dependents)
 ```
 
 ## 配置
@@ -88,6 +104,20 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 ## Staleness 语义
 
 `stale := status == 'active' && last_heartbeat_at < now - STALE_TTL_HOURS`(默认 8 小时)。**读时派生,不落库**;看板和重叠报告会打 stale 标记,但 stale ≠ dead——任务**留在报告里**,服务端**永不**因 stale 自动关闭或转移任务。关闭任务只有 owner 调 `update_status` 一条路。
+
+## 升级与回滚须知(v1 → v1.1)
+
+- **自动迁移**:v1.1 启动时自动把 schema 从 v1 迁到 v2(单事务,失败回滚并拒绝启动);启动日志会打印 `schema_version`,升级后确认它是 `2`。
+- **升级前先备份**(WAL 模式下不要直接 `cp`,见下方「备份」):
+
+  ```bash
+  docker compose stop
+  sqlite3 data/board.db ".backup 'data/board-pre-v1.1.db'"
+  docker compose up -d --build
+  ```
+
+- **回滚 = 恢复备份文件 + 旧镜像**:先停容器,把备份文件复制回 `data/board.db`(清掉同目录残留的 `-wal`/`-shm`),再用旧镜像启动。**直接换旧镜像配新库(schema v2)会崩**——旧代码不认识新表结构,且没有降级迁移。
+- **升级期间在跑的 Claude Code 会话需要重启**才能看到 3 个新工具(MCP 工具列表在会话启动时拉取)。
 
 ## 备份
 
@@ -114,7 +144,7 @@ src/
   index.ts config.ts    # bootstrap;config.ts 是唯一读 process.env 的地方
   core/                 # 纯逻辑零 I/O:slug 归一化、glob 配对、重叠引擎、staleness
   db/                   # schema.sql + better-sqlite3 连接(WAL pragma)+ repo 层
-  mcp/                  # 工具 schema/描述 + 8 个工具实现(无状态 server)
+  mcp/                  # 工具 schema/描述 + 11 个工具实现(无状态 server)
   http/                 # Express 5:POST /mcp、看板、healthz、可选 Bearer 鉴权
   web/                  # board.html(零构建链 vanilla JS)+ boardData.ts
 test/                   # unit(core 配对表)/ integration / smoke

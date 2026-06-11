@@ -3,12 +3,50 @@ import { BoardError } from '../../core/errors.js';
 import { validateScopePath } from '../../core/globs.js';
 import { computeOverlap } from '../../core/overlap.js';
 import { didYouMean } from '../../core/slug.js';
-import type { OverlapReport, ScopeRowInput, Severity } from '../../core/types.js';
+import type { DepInfo, OverlapReport, ScopeRowInput, Severity, TaskRow } from '../../core/types.js';
 import type { Db } from '../../db/connection.js';
 import { insertComment, latestNoticeSeverity, noticeFirstLine, SYSTEM_AUTHOR } from '../../db/repo/comments.js';
-import { activeTasksInProject, distinctActiveProjects } from '../../db/repo/tasks.js';
+import { depInfos, wouldCreateCycle } from '../../db/repo/deps.js';
+import { distinctOpenProjects, missingTaskIds, openTasksInProject } from '../../db/repo/tasks.js';
 import { scopesByTasks } from '../../db/repo/scopes.js';
 import type { BoardDeps } from '../deps.js';
+
+/**
+ * Who may modify this task: the owner, or — while it sits unowned in the
+ * backlog — its creator. (Closing unowned items is looser still: see updateStatus.)
+ */
+export function effectiveOwner(task: TaskRow): string {
+  return task.owner_agent_id ?? task.created_by_agent_id;
+}
+
+/**
+ * Validate a depends_on list for `taskId` BEFORE writing it: every id must
+ * exist and the new edges must not create a cycle. Closed deps are legal —
+ * surface them afterwards via closedDeps().
+ */
+export function validateDeps(db: Db, taskId: string, dependsOn: string[]): void {
+  if (dependsOn.length === 0) return;
+  if (dependsOn.includes(taskId)) {
+    throw new BoardError('VALIDATION_ERROR', 'A task cannot depend on itself.');
+  }
+  const missing = missingTaskIds(db, dependsOn);
+  if (missing.length > 0) {
+    throw new BoardError(
+      'TASK_NOT_FOUND',
+      `depends_on references unknown task id(s): ${missing.join(', ')}`,
+      'Use list_tasks (filter by project) or an overlap report to find valid task ids.',
+    );
+  }
+  const cycleVia = wouldCreateCycle(db, taskId, dependsOn);
+  if (cycleVia !== null) {
+    throw new BoardError('DEP_CYCLE', `Depending on '${cycleVia}' would create a dependency cycle.`);
+  }
+}
+
+/** Deps (by info) that are already closed — allowed but surfaced as a warning. */
+export function closedDeps(db: Db, taskId: string): DepInfo[] {
+  return depInfos(db, taskId).filter((d) => d.status === 'done' || d.status === 'abandoned');
+}
 
 export function ok(structured: Record<string, unknown>): CallToolResult {
   return {
@@ -56,13 +94,13 @@ export function buildOverlapReport(
   excludeTaskId: string | undefined,
   now: number,
 ): OverlapReport {
-  const pool = activeTasksInProject(deps.db, project, excludeTaskId);
+  const pool = openTasksInProject(deps.db, project, excludeTaskId);
   const scopeMap = scopesByTasks(
     deps.db,
     pool.map((t) => t.id),
   );
   const counterparts = pool.map((task) => ({ task, scopeRows: scopeMap.get(task.id) ?? [] }));
-  const known = distinctActiveProjects(deps.db).filter((p) => p !== project);
+  const known = distinctOpenProjects(deps.db).filter((p) => p !== project);
   const near = didYouMean(project, known);
   return computeOverlap({
     project,
@@ -123,7 +161,7 @@ export function postSymmetricNotices(
       me.taskId,
       SYSTEM_AUTHOR,
       'overlap_notice',
-      `${noticeFirstLine(c.severity, c.task_id)}\n[${c.severity}] scope overlap with '${c.title}' (${c.task_id}), owner ${c.owner_agent_id}, branch ${c.branch ?? 'n/a'}. Matched: ${describeMatches(report, c.task_id, false)}. ${tail}`,
+      `${noticeFirstLine(c.severity, c.task_id)}\n[${c.severity}] scope overlap with '${c.title}' (${c.task_id}, ${c.status}), owner ${c.owner_agent_id ?? 'unclaimed'}, branch ${c.branch ?? 'n/a'}. Matched: ${describeMatches(report, c.task_id, false)}. ${tail}`,
       now,
     );
     insertComment(

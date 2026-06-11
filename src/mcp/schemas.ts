@@ -22,13 +22,52 @@ export const registerTaskShape = {
   description: z.string().max(4000).optional().describe(P.description),
   branch: z.string().max(200).optional().describe(P.branch),
   scope: z.array(scopeRowSchema).max(50).optional().describe(P.scope),
+  start_as: z.enum(['active', 'planned', 'backlog']).optional().describe(P.start_as),
+  iteration: z.string().max(100).optional().describe(P.iteration),
+  depends_on: z.array(z.string().max(50)).max(20).optional().describe(P.depends_on),
 };
 
 export const listTasksShape = {
   agent_id: agentIdSchema,
   project: z.string().max(200).optional().describe(P.project),
-  status: z.enum(['active', 'done', 'abandoned', 'all']).optional().describe(P.status_filter),
+  status: z
+    .enum(['open', 'planned', 'active', 'done', 'abandoned', 'all'])
+    .optional()
+    .describe(P.status_filter),
   owner_agent_id: z.string().max(100).optional().describe(P.owner_filter),
+  iteration: z.string().max(100).optional().describe(P.iteration_filter),
+};
+
+export const claimTaskShape = {
+  agent_id: agentIdSchema,
+  task_id: z
+    .string()
+    .min(1)
+    .max(50)
+    .describe(
+      'The planned/backlog task to claim. Origin: list_tasks rows, an overlap report, or your human.',
+    ),
+};
+
+export const updateTaskShape = {
+  agent_id: agentIdSchema,
+  task_id: z.string().min(1).max(50).describe(P.task_id),
+  title: z.string().min(1).max(200).optional().describe(P.title),
+  description: z.string().max(4000).optional().describe(P.description),
+  branch: z.string().max(200).nullable().optional().describe(`${P.branch} Pass null to clear.`),
+  iteration: z.string().max(100).optional().describe(P.iteration),
+  depends_on: z
+    .array(z.string().max(50))
+    .max(20)
+    .optional()
+    .describe(`FULL REPLACEMENT of the dependency list. ${P.depends_on}`),
+};
+
+export const getStandupShape = {
+  agent_id: agentIdSchema,
+  project: z.string().max(200).optional().describe(P.project),
+  iteration: z.string().max(100).optional().describe(P.iteration_filter),
+  window_hours: z.number().int().min(1).max(168).optional().describe(P.window_hours),
 };
 
 export const getTaskShape = {

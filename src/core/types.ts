@@ -1,9 +1,9 @@
 /** Severity of a scope overlap with a counterpart task. */
 export type Severity = 'HIGH' | 'MEDIUM' | 'UNKNOWN';
 
-export type TaskStatus = 'active' | 'done' | 'abandoned';
+export type TaskStatus = 'planned' | 'active' | 'done' | 'abandoned';
 
-export type CommentKind = 'comment' | 'boundary_agreement' | 'overlap_notice';
+export type CommentKind = 'comment' | 'boundary_agreement' | 'overlap_notice' | 'dependency_notice';
 
 /** A scope row as declared by an agent. At least one of path_glob / module must be present. */
 export interface ScopeRowInput {
@@ -27,13 +27,33 @@ export interface TaskRow {
   title: string;
   description: string;
   branch: string | null;
-  owner_agent_id: string;
+  /** NULL = unclaimed backlog item (only legal while status is 'planned'). */
+  owner_agent_id: string | null;
+  created_by_agent_id: string;
   status: TaskStatus;
+  /** Free-form sprint label agreed by the team, e.g. '2026w24'. */
+  iteration: string | null;
   closing_note: string | null;
   created_at: number;
   updated_at: number;
+  /** When the task became active (v1 rows: backfilled to created_at). */
+  claimed_at: number | null;
   closed_at: number | null;
   last_heartbeat_at: number;
+}
+
+export interface TaskDepRow {
+  id: number;
+  task_id: string;
+  depends_on_task_id: string;
+  created_at: number;
+}
+
+/** Dependency as exposed to callers: id + enough context to judge it. */
+export interface DepInfo {
+  task_id: string;
+  title: string;
+  status: TaskStatus;
 }
 
 export interface CommentRow {
@@ -58,7 +78,10 @@ export interface OverlapCounterpart {
   title: string;
   /** What the counterpart is working on, truncated to 500 chars. */
   description: string;
-  owner_agent_id: string;
+  /** null = unclaimed backlog item. */
+  owner_agent_id: string | null;
+  /** 'planned' counterparts have not started — negotiating now is cheapest. */
+  status: TaskStatus;
   branch: string | null;
   updated_at: number;
   last_heartbeat_at: number;

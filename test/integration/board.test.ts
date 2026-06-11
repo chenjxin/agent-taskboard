@@ -72,6 +72,15 @@ describe('GET /api/board over HTTP', () => {
 
     const health = await fetch(`${base}/healthz`);
     expect(await health.json()).toEqual({ ok: true });
+
+    const standup = await fetch(`${base}/api/standup?hours=48`);
+    expect(standup.status).toBe(200);
+    const digest = (await standup.json()) as { window_hours: number; projects: unknown[] };
+    expect(digest.window_hours).toBe(48);
+    expect(digest.projects.length).toBeGreaterThan(0);
+
+    const payload2 = (await (await fetch(`${base}/api/board`)).json()) as { protocol_version: number };
+    expect(payload2.protocol_version).toBe(2);
   });
 
   it('enforces bearer auth on /mcp and /api/board when AUTH_TOKEN is set', async () => {

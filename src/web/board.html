@@ -115,6 +115,34 @@
   .closed-box { margin-top: 10px; }
   .closed-box summary { cursor: pointer; color: var(--dim); font-size: 12px; user-select: none; }
   .closed-box .grid { margin-top: 8px; }
+  .card.status-planned { background: var(--bg); border-style: dashed; opacity: 0.85; }
+  .badge.st-planned { border-style: dashed; }
+  .owner-unclaimed {
+    font-size: 11px; font-style: italic; color: var(--dim);
+    border: 1px dashed var(--border); border-radius: 10px; padding: 0 8px;
+  }
+  .chip.iteration { font-family: var(--mono); color: var(--accent); }
+  .chip.blocked { background: var(--red-bg); color: var(--red-fg); border-color: var(--red-bd); font-weight: 700; cursor: help; }
+  .chip.dep-abandoned { background: var(--amber-bg); color: var(--amber-fg); border-color: var(--amber-bd); cursor: help; }
+  .iter-stat {
+    font-size: 11px; font-family: var(--mono); color: var(--dim); cursor: help;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 6px;
+  }
+  .group-head { font-size: 12px; font-weight: 600; color: var(--dim); margin: 14px 0 8px; }
+  .standup-box { max-width: 1500px; margin: 0 auto; padding: 12px 20px 0; }
+  .standup-box summary { cursor: pointer; color: var(--dim); font-size: 12px; user-select: none; }
+  .standup-project {
+    margin-top: 10px; padding: 8px 12px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .standup-project-name { font-size: 13px; margin: 0 0 4px; font-family: var(--mono); color: var(--accent); }
+  .standup-line { margin: 2px 0; font-size: 12px; overflow-wrap: anywhere; }
+  .standup-label {
+    font-size: 11px; font-weight: 600; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .standup-task[title] { cursor: help; }
+  .standup-counts { color: var(--dim); }
   .empty { color: var(--dim); font-size: 13px; font-style: italic; }
 </style>
 </head>
@@ -130,6 +158,10 @@
   </div>
 </header>
 <div id="error-banner" hidden></div>
+<details class="standup-box">
+  <summary>过去 24h 站会摘要</summary>
+  <div id="standup-body"><p class="empty">loading…</p></div>
+</details>
 <main id="board"><p class="empty">loading…</p></main>
 <script>
 'use strict';
@@ -138,16 +170,17 @@
 // contains zero direct-HTML sinks (inner/outer HTML, adjacent-HTML insertion).
 
 const POLL_MS = 10000;
-const STATUSES = { active: 'active', done: 'done', abandoned: 'abandoned' };
+const STATUSES = { planned: 'planned', active: 'active', done: 'done', abandoned: 'abandoned' };
 const KINDS = { comment: 'comment', boundary_agreement: 'boundary_agreement', overlap_notice: 'overlap_notice' };
 
-const state = { data: null, filter: 'all', error: null, fetchedAt: null };
+const state = { data: null, standup: null, filter: 'all', error: null, standupError: null, fetchedAt: null };
 
 const $board = document.getElementById('board');
 const $filter = document.getElementById('project-filter');
 const $stamp = document.getElementById('updated-stamp');
 const $banner = document.getElementById('error-banner');
 const $ttl = document.getElementById('ttl-note');
+const $standupBody = document.getElementById('standup-body');
 
 /** Create an element; text always goes through textContent. */
 function el(tag, className, text) {
@@ -179,8 +212,9 @@ function fmtClock(d) {
   return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
 }
 
-/** 'human/agent' → human bold, '/agent' dim. No slash → whole id bold. */
+/** 'human/agent' → human bold, '/agent' dim. No slash → whole id bold. NULL → unclaimed backlog item. */
 function ownerBadge(agentId) {
+  if (agentId == null) return el('span', 'owner owner-unclaimed', 'unclaimed');
   const id = String(agentId);
   const badge = el('span', 'owner');
   const slash = id.indexOf('/');
@@ -226,13 +260,14 @@ function taskCard(t, now) {
 
   const head = el('div', 'card-head');
   head.appendChild(el('h3', 'task-title', t.title));
-  head.appendChild(el('span', 'badge st-' + status, t.status));
+  head.appendChild(el('span', 'badge st-' + status, status)); // label from the same whitelisted value as the class
   card.appendChild(head);
 
   const meta = el('div', 'meta');
   meta.appendChild(ownerBadge(t.owner_agent_id));
   if (t.branch) meta.appendChild(el('code', 'branch', t.branch));
-  meta.appendChild(timeEl('created', t.created_at, now));
+  if (t.iteration) meta.appendChild(chip('chip iteration', t.iteration));
+  meta.appendChild(timeEl(status === 'planned' ? '提交于' : 'created', t.created_at, now));
   if (status === 'active') {
     meta.appendChild(timeEl('heartbeat', t.last_heartbeat_at, now));
     if (t.stale) {
@@ -242,6 +277,18 @@ function taskCard(t, now) {
     }
   } else if (t.closed_at != null) {
     meta.appendChild(timeEl('closed', t.closed_at, now));
+  }
+  const deps = t.depends_on || [];
+  if (t.blocked) {
+    const blockers = deps.filter((d) => d.status === 'planned' || d.status === 'active');
+    meta.appendChild(chip('chip blocked', '⛔ blocked',
+      'waiting on:\n' + blockers.map((d) => d.task_id + ': ' + d.title).join('\n')));
+  }
+  const dropped = deps.filter((d) => d.status === 'abandoned');
+  if (dropped.length > 0) {
+    meta.appendChild(chip('chip dep-abandoned', '⚠ dep abandoned',
+      dropped.map((d) => d.task_id + ': ' + d.title).join('\n') +
+      '\nprerequisite was dropped, not completed'));
   }
   card.appendChild(meta);
 
@@ -268,20 +315,40 @@ function taskCard(t, now) {
   return card;
 }
 
+/** '2026w24 3/5 done · avg 12.4h' (avg omitted until a task in the iteration finishes). */
+function iterStatLabel(it) {
+  const base = it.iteration + ' ' + it.done + '/' + it.total + ' done';
+  return it.avg_cycle_hours == null ? base : base + ' · avg ' + it.avg_cycle_hours + 'h';
+}
+
 function projectSection(p, now) {
   const section = el('section', 'project');
   const active = p.tasks.filter((t) => t.status === 'active');
-  const closed = p.tasks.filter((t) => t.status !== 'active');
+  const planned = p.tasks.filter((t) => t.status === 'planned');
+  const closed = p.tasks.filter((t) => t.status === 'done' || t.status === 'abandoned');
 
   const head = el('div', 'project-head');
   head.appendChild(el('h2', 'project-name', p.project));
   head.appendChild(el('span', 'project-count', active.length + ' active'));
+  for (const it of p.iterations || []) {
+    const stat = el('span', 'iter-stat', iterStatLabel(it));
+    stat.title = 'planned ' + it.planned + ' · active ' + it.active +
+      ' · done ' + it.done + ' · abandoned ' + it.abandoned;
+    head.appendChild(stat);
+  }
   section.appendChild(head);
 
   const grid = el('div', 'grid');
   if (active.length === 0) grid.appendChild(el('p', 'empty', 'no active tasks'));
   for (const t of active) grid.appendChild(taskCard(t, now));
   section.appendChild(grid);
+
+  if (planned.length > 0) {
+    section.appendChild(el('h3', 'group-head', '待认领 / 计划中 (' + planned.length + ')'));
+    const plannedGrid = el('div', 'grid');
+    for (const t of planned) plannedGrid.appendChild(taskCard(t, now));
+    section.appendChild(plannedGrid);
+  }
 
   if (closed.length > 0) {
     const details = el('details', 'closed-box');
@@ -292,6 +359,54 @@ function projectSection(p, now) {
     section.appendChild(details);
   }
   return section;
+}
+
+const STANDUP_GROUPS = [
+  ['completed', 'completed'],
+  ['abandoned', 'abandoned'],
+  ['started', 'started'],
+  ['planned_added', 'planned added'],
+  ['blocked', 'blocked'],
+  ['stale', 'stale'],
+];
+
+function standupProject(p) {
+  const box = el('div', 'standup-project');
+  box.appendChild(el('h3', 'standup-project-name', p.project));
+  for (const [key, label] of STANDUP_GROUPS) {
+    const items = p[key] || [];
+    if (items.length === 0) continue;
+    const line = el('p', 'standup-line');
+    line.appendChild(el('span', 'standup-label', label + ' ' + items.length + ': '));
+    items.forEach((t, i) => {
+      if (i > 0) line.appendChild(document.createTextNode(' · '));
+      const span = el('span', 'standup-task', t.title);
+      const info = [t.task_id];
+      if (t.owner_agent_id) info.push('owner ' + t.owner_agent_id);
+      if (t.iteration) info.push('iteration ' + t.iteration);
+      if (t.blocked_by && t.blocked_by.length > 0) info.push('blocked by ' + t.blocked_by.join(', '));
+      span.title = info.join(' · ');
+      line.appendChild(span);
+    });
+    box.appendChild(line);
+  }
+  box.appendChild(el('p', 'standup-line standup-counts',
+    'overlap notices ' + p.overlap_notices + ' · boundary agreements ' + p.boundary_agreements));
+  return box;
+}
+
+function renderStandup() {
+  $standupBody.replaceChildren();
+  if (!state.standup) {
+    $standupBody.appendChild(el('p', 'empty',
+      state.standupError ? 'standup fetch failed: ' + state.standupError : 'loading…'));
+    return;
+  }
+  if (state.standup.projects.length === 0) {
+    $standupBody.appendChild(el('p', 'empty', '窗口内无活动'));
+    return;
+  }
+  for (const p of state.standup.projects) $standupBody.appendChild(standupProject(p));
 }
 
 function renderFilter() {
@@ -334,6 +449,7 @@ function renderBanner() {
 
 function render() {
   renderBanner();
+  renderStandup();
   if (state.fetchedAt) $stamp.textContent = 'last updated ' + fmtClock(state.fetchedAt);
   if (!state.data) {
     $board.replaceChildren(el('p', 'empty', 'waiting for first successful fetch…'));
@@ -344,15 +460,25 @@ function render() {
   renderBoard();
 }
 
+async function fetchJson(url) {
+  const res = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
 async function refresh() {
   try {
-    const res = await fetch('/api/board', { headers: { accept: 'application/json' } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    state.data = await res.json();
+    state.data = await fetchJson('/api/board');
     state.error = null;
     state.fetchedAt = new Date();
   } catch (err) {
     state.error = err instanceof Error ? err.message : String(err);
+  }
+  try {
+    state.standup = await fetchJson('/api/standup');
+    state.standupError = null;
+  } catch (err) {
+    state.standupError = err instanceof Error ? err.message : String(err);
   }
   render();
 }

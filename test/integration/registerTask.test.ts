@@ -73,21 +73,24 @@ describe('register_task', () => {
     }
   });
 
-  it('exposes all 8 tools and the server instructions', async () => {
+  it('exposes all 11 tools and the server instructions', async () => {
     const b = await makeTestBoard();
     const tools = await b.client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
       'add_comment',
       'check_overlap',
+      'claim_task',
+      'get_standup',
       'get_task',
       'heartbeat',
       'list_tasks',
       'register_task',
       'update_scope',
       'update_status',
+      'update_task',
     ]);
     const readOnly = tools.tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name);
-    expect(readOnly.sort()).toEqual(['check_overlap', 'get_task', 'list_tasks']);
+    expect(readOnly.sort()).toEqual(['check_overlap', 'get_standup', 'get_task', 'list_tasks']);
     expect(b.client.getInstructions()).toContain('never assigns');
   });
 });

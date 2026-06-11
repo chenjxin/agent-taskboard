@@ -86,8 +86,8 @@ function broadGlobsOf(scope: ScopeRowInput[]): string[] {
 }
 
 function nextStepFor(c: CounterpartInput, severity: Severity, stale: boolean, hoursAgo: number): string {
-  const owner = c.task.owner_agent_id;
-  const human = owner.split('/')[0] ?? owner;
+  const owner = c.task.owner_agent_id ?? 'unclaimed';
+  const human = c.task.owner_agent_id?.split('/')[0];
   let step: string;
   switch (severity) {
     case 'HIGH':
@@ -106,10 +106,15 @@ function nextStepFor(c: CounterpartInput, severity: Severity, stale: boolean, ho
         `to ask ${owner} for a scope declaration (update_scope), and describe what you plan to touch.`;
       break;
   }
+  if (c.task.status === 'planned') {
+    step += c.task.owner_agent_id
+      ? ` NOTE: that task is still PLANNED (not started) — negotiating the boundary NOW, before either side writes code, is the cheapest moment.`
+      : ` NOTE: that task is an UNCLAIMED backlog item. If it is yours to do, claim_task it; otherwise leave your boundary as a comment — whoever claims it gets the full thread.`;
+  }
   if (stale) {
     step +=
       ` NOTE: owner's last heartbeat was ${hoursAgo}h ago (stale — advisory, the session may just be paused). ` +
-      `Comment for the record, consider contacting ${human} directly, and proceed with caution.`;
+      `Comment for the record${human ? `, consider contacting ${human} directly` : ''}, and proceed with caution.`;
   }
   return step;
 }
@@ -126,13 +131,14 @@ export function computeOverlap(args: ComputeOverlapArgs): OverlapReport {
       lowContactCount += 1;
       continue;
     }
-    const stale = isStale(c.task.last_heartbeat_at, staleTtlHours, now);
+    const stale = c.task.status === 'active' && isStale(c.task.last_heartbeat_at, staleTtlHours, now);
     const hoursAgo = hoursSince(c.task.last_heartbeat_at, now);
     rows.push({
       task_id: c.task.id,
       title: c.task.title,
       description: c.task.description.slice(0, DESCRIPTION_LIMIT),
       owner_agent_id: c.task.owner_agent_id,
+      status: c.task.status,
       branch: c.task.branch,
       updated_at: c.task.updated_at,
       last_heartbeat_at: c.task.last_heartbeat_at,

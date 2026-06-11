@@ -62,6 +62,26 @@ export function recentByTask(db: Db, taskId: string, limit: number): CommentRow[
   return rows.reverse();
 }
 
+/** Machine-readable first line of a system dependency notice. */
+export function depNoticeFirstLine(outcome: 'done' | 'abandoned', closedTaskId: string): string {
+  return `DEPENDENCY ${outcome === 'done' ? 'RESOLVED' : 'ABANDONED'} task:${closedTaskId}`;
+}
+
+/** (project, kind) comment counts within a window — feeds the standup digest. */
+export function commentKindCountsSince(
+  db: Db,
+  sinceMs: number,
+): Array<{ project: string; kind: string; n: number }> {
+  return db
+    .prepare(
+      `SELECT t.project AS project, c.kind AS kind, COUNT(*) AS n
+       FROM comments c JOIN tasks t ON t.id = c.task_id
+       WHERE c.created_at > ? AND c.kind IN ('overlap_notice', 'boundary_agreement')
+       GROUP BY t.project, c.kind`,
+    )
+    .all(sinceMs) as Array<{ project: string; kind: string; n: number }>;
+}
+
 const NOTICE_FIRST_LINE = /^OVERLAP (HIGH|MEDIUM|UNKNOWN) task:(\S+)/;
 
 /** Machine-readable first line of a system overlap notice (used for pair-dedup). */

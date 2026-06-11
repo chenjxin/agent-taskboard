@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { RequestHandler } from 'express';
 
 /**
@@ -12,10 +12,11 @@ export function bearerAuth(token: string | undefined): RequestHandler {
       return;
     }
     const header = req.headers.authorization ?? '';
-    const expected = `Bearer ${token}`;
-    const a = Buffer.from(header);
-    const b = Buffer.from(expected);
-    if (a.length === b.length && timingSafeEqual(a, b)) {
+    // Compare fixed-length digests: constant-time regardless of input length,
+    // so probing cannot learn the token's byte length either.
+    const a = createHash('sha256').update(header).digest();
+    const b = createHash('sha256').update(`Bearer ${token}`).digest();
+    if (timingSafeEqual(a, b)) {
       next();
       return;
     }
