@@ -9,7 +9,10 @@
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# Mirror config matches the host (~/.npmrc): direct registry.npmjs.org and the
+# GitHub prebuilt-binary download for better-sqlite3 time out from this network.
+RUN printf 'registry=https://registry.npmmirror.com/\nbetter_sqlite3_binary_host_mirror=https://npmmirror.com/mirrors/better-sqlite3/\n' > .npmrc \
+  && npm ci
 COPY tsconfig.json tsconfig.build.json CHANGELOG.md ./
 COPY src ./src
 COPY adoption ./adoption
@@ -21,7 +24,11 @@ FROM node:24-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev
+# Reuse the build stage's modules and prune dev deps OFFLINE — a second
+# `npm ci` here re-downloads everything and doubles the exposure to
+# prebuilt-binary download timeouts (better-sqlite3 fetches from GitHub).
+COPY --from=build /app/node_modules ./node_modules
+RUN npm prune --omit=dev
 COPY --from=build /app/dist ./dist
 # /data holds board.db plus its WAL siblings (-wal/-shm); owned by the
 # unprivileged node user the container runs as.

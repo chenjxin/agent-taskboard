@@ -33,7 +33,13 @@ const changelogPath = existsSync(join(base, 'CHANGELOG.md'))
   ? join(base, 'CHANGELOG.md')
   : join(base, '..', 'CHANGELOG.md');
 
-const app = buildApp(deps, { authToken: config.authToken, webDir, adoptionDir, changelogPath });
+const app = buildApp(deps, {
+  authToken: config.authToken,
+  adminToken: config.adminToken,
+  webDir,
+  adoptionDir,
+  changelogPath,
+});
 const server = app.listen(config.port, () => {
   console.log(
     `[${new Date().toISOString()}] task-board listening on :${config.port} ` +

@@ -57,7 +57,7 @@ describe('end-to-end collision flow over Streamable HTTP', () => {
 
     // listTools proves the stateless handshake; instructions arrive at init.
     const tools = await alice.listTools();
-    expect(tools.tools).toHaveLength(11);
+    expect(tools.tools).toHaveLength(12);
 
     // Alice claims auth work.
     const aReg = structured(

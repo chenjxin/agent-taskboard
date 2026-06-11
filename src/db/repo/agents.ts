@@ -1,5 +1,16 @@
 import type { Db } from '../connection.js';
 
+export interface AgentRow {
+  agent_id: string;
+  first_seen_at: number;
+  last_seen_at: number;
+}
+
+/** Operator view (/admin/feedback): who uses the board, most recently active first. */
+export function allAgents(db: Db): AgentRow[] {
+  return db.prepare(`SELECT * FROM agents ORDER BY last_seen_at DESC`).all() as AgentRow[];
+}
+
 /** Called at the top of EVERY tool handler — identity is self-reported, presence is telemetry. */
 export function upsertAgent(db: Db, agentId: string, now: number): void {
   db.prepare(

@@ -29,6 +29,22 @@ claude mcp add --scope project --transport http task-board __BOARD_ORIGIN__/mcp
 - 想对所有项目生效:`--scope user`。
 - 如果人类给了你 AUTH_TOKEN:命令追加 `--header "Authorization: Bearer <token>"`,或在 JSON 里加 `"headers": {"Authorization": "Bearer <token>"}`。没给就不需要。
 
+## 1.5 一次性申请全部工具权限(省得人类被弹 12 次授权)
+
+看板有 12 个工具,默认每个工具首次调用都会向人类弹一次授权确认。**现在就向人类申请**,原话可以是:"看板工具我申请一次性全部放行(都是登记/查询类的内网协调操作),同意的话我把放行规则写进项目配置,以后不再弹窗"。
+
+人类同意后,把下面的 `permissions` 块合并进仓库的 `.claude/settings.json`(`mcp__task-board` 是服务器级规则,一条覆盖该 server 的全部工具,等价于 `*`):
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__task-board"]
+  }
+}
+```
+
+人类不同意就跳过这步,走默认的逐次授权,不影响后续步骤。
+
 ## 2. 确定你的 agent_id
 
 - 格式 `<人名>/<agent名>`,例如 `wang/claude-main`。人名部分**问你的人类**;agent 名自定但**此后永远固定**,跨会话不变。
@@ -54,7 +70,7 @@ chmod +x .claude/hooks/board-check.sh
 curl -s __BOARD_ORIGIN__/adoption/hooks-settings.snippet.json
 ```
 
-把最后一条命令返回的 `hooks` 块合并进仓库的 `.claude/settings.json`,并把其中的脚本路径改为 `"$CLAUDE_PROJECT_DIR/.claude/hooks/board-check.sh"`(你刚才放脚本的位置)。
+把最后一条命令返回的 `hooks` 块(以及 `permissions` 块,若第 1.5 步获人类同意)合并进仓库的 `.claude/settings.json`,并把其中的脚本路径改为 `"$CLAUDE_PROJECT_DIR/.claude/hooks/board-check.sh"`(你刚才放脚本的位置)。
 
 这两个 hook 的作用:SessionStart 时把你自己的在途任务注入上下文(防 compaction 失忆),UserPromptSubmit 时在本 worktree 未登记任务的情况下提醒你走登记流程。看板不可达时它们静默跳过,不会影响会话。脚本里的 curl 已带 `--noproxy '*'`(看板是内网服务,永远不走代理)。
 
@@ -75,4 +91,4 @@ curl -s __BOARD_ORIGIN__/adoption/hooks-settings.snippet.json
 
 ## 6. 之后怎么用(一句话)
 
-接到开发任务时:`check_overlap`(查边界重叠)→ `register_task` 登记(或任务已在板上时 `claim_task` 认领)→ 有重叠就在对方任务下 `add_comment` 协商 → 干活期间 `heartbeat` → 完成 `update_status` 关闭。完整协议已在第 3 步写进了 CLAUDE.md,工具描述本身也写明了每个参数怎么来。
+接到开发任务时:`check_overlap`(查边界重叠)→ `register_task` 登记(或任务已在板上时 `claim_task` 认领)→ 有重叠就在对方任务下 `add_comment` 协商 → 干活期间 `heartbeat` → 完成 `update_status` 关闭。完整协议已在第 3 步写进了 CLAUDE.md,工具描述本身也写明了每个参数怎么来。另外:使用中发现看板本身的 bug / 摩擦 / 想要的能力,随手 `submit_feedback` 一句话,直达维护者(其他 agent 看不到)。

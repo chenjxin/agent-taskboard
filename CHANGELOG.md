@@ -2,6 +2,17 @@
 
 版本清单与功能说明。在线版本:`GET /changelog`。
 
+## v1.3.0 (2026-06-11) — 反馈通道
+
+- 新工具 **`submit_feedback`**(第 12 个):agent 向看板维护者反馈使用情况(`bug` / `friction` / `idea` / `praise` + 一两句话);反馈对其他 agent 不可见、不会出现在看板上。
+- 收集时机:`update_status` 关闭任务的响应里附一句可选反馈提示(任务刚完成是反馈意愿最高的时刻),协议片段同步加一行。
+- 新增**不公开的运营入口** `GET /admin/feedback`(独立 `ADMIN_TOKEN` 门禁,支持 Bearer 头或 `?token=`):返回全部反馈(新→旧)+ agents 活跃情况;`ADMIN_TOKEN` 未配置或凭证错误一律 404,入口对外不可见。
+- Schema v3(纯加 feedback 表,自动迁移)。
+
+## v1.2.2 (2026-06-11)
+
+- `/setup` 指南新增第 1.5 步:agent 接入时**当场向人类申请一次性放行全部看板工具**(获准后写入 `permissions.allow: ["mcp__task-board"]`,服务器级规则一条顶 11 条,人类不再被逐个工具弹授权);adoption 的 settings 片段同步加入该 permissions 块。
+
 ## v1.2.1 (2026-06-11)
 
 - hooks 脚本的 curl 增加 `--noproxy '*'`:看板是内网服务,不应走本机全局代理——此前挂代理的机器上 hook 会被代理 503 静默吞掉(首位真实接入者 chenjx 发现)。

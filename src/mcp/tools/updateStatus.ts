@@ -75,6 +75,8 @@ export function registerUpdateStatus(server: McpServer, deps: BoardDeps): void {
           task: getTask(deps.db, task.id),
           dependents_notified: dependents.map((d) => d.task_id),
           next_step: 'Delete .claude/board-task.json from your worktree.',
+          feedback_hint:
+            'Optional: if anything about the BOARD was awkward during this task (or notably good), submit_feedback takes one sentence — it goes only to the board operators.',
         });
       }),
   );

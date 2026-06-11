@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2');
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '3');
 
 -- Self-reported identities ('human/agent'), auto-upserted on every tool call.
 CREATE TABLE IF NOT EXISTS agents (
@@ -62,6 +62,18 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_comments_task_created ON comments(task_id, created_at);
+
+-- Agent feedback for the board operators. Write-only for agents (submit_feedback) --
+-- read happens via the non-public /admin/feedback endpoint (ADMIN_TOKEN gated).
+CREATE TABLE IF NOT EXISTS feedback (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id   TEXT NOT NULL,
+  kind       TEXT NOT NULL CHECK (kind IN ('bug', 'friction', 'idea', 'praise')),
+  body       TEXT NOT NULL,
+  context    TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
 
 -- task_id depends on depends_on_task_id ("blocked by"). Informational only.
 CREATE TABLE IF NOT EXISTS task_deps (

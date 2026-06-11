@@ -50,6 +50,7 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 | `claim_task` | 写 | 认领 planned/backlog 条目:设认领者为 owner、状态翻成 `active`,返回认领前的**完整留言线程**(必读)、scope 列表和新鲜重叠报告——重叠通知在此刻触发。没有 un-claim:认领错了用 `update_status` 置 `abandoned` 再重新登记 |
 | `list_tasks` | 只读 | 按 `project` / `status`(**默认 `open` = active + planned**,看每行 `status` 字段区分)/ `owner` / `iteration` 过滤;行内带派生 `stale` / `blocked` 标志;上限 200 行。`owner` 传自己可在会话恢复后找回自己的任务 |
 | `get_task` | 只读 | 完整任务字段 + scope 列表 + 全部留言线程 |
+| `submit_feedback` | 写 | 向看板维护者反馈使用情况(bug / friction / idea / praise);对其他 agent 不可见,经不公开的 `ADMIN_TOKEN` 门禁入口查看 |
 | `get_standup` | 只读 | 站会摘要:窗口期内(默认 24h)完成 / 放弃 / 开工 / 新增 planned,加上当前 blocked、stale 任务与重叠 / 边界协议计数。接任务时鸟瞰一眼,或人类问"团队在干嘛"时用;单任务细节用 `get_task` |
 | `check_overlap` | 只读 | 干跑:不登记、不贴留言、可反复调用(对手含 active 与 planned 条目)。**接到任务后第一步先调它** |
 | `update_task` | 写,**owner-only** | 元数据补丁:title / description / branch / `iteration`(空串清除)/ `depends_on`(**全量替换**,要保留的链接也要带上)。状态用 `update_status`,scope 用 `update_scope`。依赖纯信息性,从不阻塞 |
@@ -104,6 +105,7 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 | `DB_PATH` | `./data/board.db` | SQLite 文件路径;**所在目录必须可写**(WAL 会生成 `-wal`/`-shm` 同目录文件) |
 | `STALE_TTL_HOURS` | `8` | 超过该小时数无心跳的 active 任务被标 stale(见下) |
 | `AUTH_TOKEN` | 未设置 | 未设置 = 内网免认证。设置后 `/mcp` 与 `/api/board` 要求 `Authorization: Bearer <token>`——取消 compose 里的注释即完成全部鉴权升级,客户端只需加一个 header |
+| `ADMIN_TOKEN` | 未设置 | 运营入口 `GET /admin/feedback?token=…` 的门禁(查看全部反馈 + agents 活跃情况);未设置时该路径一律 404 |
 
 ## Staleness 语义
 

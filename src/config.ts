@@ -14,6 +14,7 @@ export interface Config {
   dbPath: string;
   staleTtlHours: number;
   authToken: string | undefined;
+  adminToken: string | undefined;
 }
 
 function numberFrom(raw: string | undefined, fallback: number): number {
@@ -31,5 +32,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: env['DB_PATH'] ?? './data/board.db',
     staleTtlHours: numberFrom(env['STALE_TTL_HOURS'], 8),
     authToken: env['AUTH_TOKEN'] || undefined,
+    adminToken: env['ADMIN_TOKEN'] || undefined,
   };
 }

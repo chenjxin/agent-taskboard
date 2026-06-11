@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export type Db = Database.Database;
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
 function baselineSql(): string {
@@ -80,6 +80,14 @@ const MIGRATIONS: Migration[] = [
       ]) {
         db.exec(baselineStatement('index', idx));
       }
+    },
+  },
+  {
+    to: 3,
+    name: 'feedback channel',
+    up: (db) => {
+      db.exec(baselineStatement('table', 'feedback'));
+      db.exec(baselineStatement('index', 'idx_feedback_created'));
     },
   },
 ];

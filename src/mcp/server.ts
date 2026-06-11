@@ -11,6 +11,7 @@ import { registerHeartbeat } from './tools/heartbeat.js';
 import { registerListTasks } from './tools/listTasks.js';
 import { registerRegisterTask } from './tools/registerTask.js';
 import { registerUpdateScope } from './tools/updateScope.js';
+import { registerSubmitFeedback } from './tools/submitFeedback.js';
 import { registerUpdateStatus } from './tools/updateStatus.js';
 import { registerUpdateTask } from './tools/updateTask.js';
 
@@ -34,5 +35,6 @@ export function buildMcpServer(deps: BoardDeps): McpServer {
   registerUpdateStatus(server, deps);
   registerHeartbeat(server, deps);
   registerGetStandup(server, deps);
+  registerSubmitFeedback(server, deps);
   return server;
 }

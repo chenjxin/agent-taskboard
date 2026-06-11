@@ -1,6 +1,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { RequestHandler } from 'express';
 
+/** Constant-time string equality via fixed-length digests (no length leak). */
+export function digestEqual(a: string, b: string): boolean {
+  return timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest());
+}
+
 /**
  * Optional bearer auth: active only when AUTH_TOKEN is set (the one-line
  * upgrade path). Unset = open LAN mode, the default for a trusted network.
@@ -12,11 +17,7 @@ export function bearerAuth(token: string | undefined): RequestHandler {
       return;
     }
     const header = req.headers.authorization ?? '';
-    // Compare fixed-length digests: constant-time regardless of input length,
-    // so probing cannot learn the token's byte length either.
-    const a = createHash('sha256').update(header).digest();
-    const b = createHash('sha256').update(`Bearer ${token}`).digest();
-    if (timingSafeEqual(a, b)) {
+    if (digestEqual(header, `Bearer ${token}`)) {
       next();
       return;
     }

@@ -73,7 +73,7 @@ describe('register_task', () => {
     }
   });
 
-  it('exposes all 11 tools and the server instructions', async () => {
+  it('exposes all 12 tools and the server instructions', async () => {
     const b = await makeTestBoard();
     const tools = await b.client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
@@ -85,6 +85,7 @@ describe('register_task', () => {
       'heartbeat',
       'list_tasks',
       'register_task',
+      'submit_feedback',
       'update_scope',
       'update_status',
       'update_task',

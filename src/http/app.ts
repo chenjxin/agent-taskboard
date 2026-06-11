@@ -7,11 +7,15 @@ import { schemaVersion } from '../db/connection.js';
 import { buildMcpServer } from '../mcp/server.js';
 import type { BoardDeps } from '../mcp/deps.js';
 import { buildStandup } from '../mcp/tools/getStandup.js';
+import { allAgents } from '../db/repo/agents.js';
+import { allFeedback } from '../db/repo/feedback.js';
 import { buildBoardData } from '../web/boardData.js';
-import { bearerAuth } from './auth.js';
+import { bearerAuth, digestEqual } from './auth.js';
 
 export interface AppOptions {
   authToken?: string | undefined;
+  /** Gates the non-public /admin/feedback view. Unset = the route plays dead (404). */
+  adminToken?: string | undefined;
   /** Absolute dir containing board.html / onboard.html / setup.md (src/web in dev, dist/web in the build). */
   webDir: string;
   /** Absolute dir containing the adoption kit files (repo adoption/ in dev, dist/adoption in the build). */
@@ -157,6 +161,28 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.type('text/plain; charset=utf-8');
     res.sendFile(opts.changelogPath);
+  });
+
+  // Non-public operator view: all agent feedback + usage (agents seen).
+  // Requires ADMIN_TOKEN (separate from AUTH_TOKEN). Unset token, missing
+  // credential or mismatch all answer 404 — the route does not reveal itself.
+  app.get('/admin/feedback', (req, res) => {
+    const provided =
+      (req.headers.authorization ?? '').replace(/^Bearer /, '') || queryString(req.query['token']) || '';
+    if (!opts.adminToken || provided === '' || !digestEqual(provided, opts.adminToken)) {
+      res.status(404).json({ error: 'Not found' });
+      return;
+    }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'self'");
+    res.setHeader('Cache-Control', 'no-store');
+    const feedback = allFeedback(deps.db, 1000);
+    res.json({
+      generated_at: deps.now(),
+      feedback_count: feedback.length,
+      feedback,
+      agents: allAgents(deps.db),
+    });
   });
 
   app.get('/healthz', (_req, res) => {

@@ -20,3 +20,7 @@ services:
       # clients just add that one header to their MCP config. Leaving it unset
       # = open LAN mode (the default for a trusted home/office network).
       # AUTH_TOKEN: change-me
+      # Gates the non-public GET /admin/feedback operator view (agent feedback +
+      # usage). Separate from AUTH_TOKEN; unset = the route answers 404. Put the
+      # real value in a .env file next to this compose file (gitignored).
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}

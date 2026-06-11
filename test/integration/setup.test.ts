@@ -41,6 +41,7 @@ describe('GET /setup — agent self-serve onboarding doc', () => {
     expect(md).toContain(`${base}/mcp`); // the address the agent actually used
     expect(md).toContain('claude mcp add');
     expect(md).toContain('agent_id');
+    expect(md).toContain('mcp__task-board'); // one-shot permission rule for all tools
     expect(md).toContain('list_tasks'); // verification step
   });
 });
@@ -66,7 +67,7 @@ describe('GET /healthz version info', () => {
     const health = (await (await fetch(`${base}/healthz`)).json()) as Record<string, unknown>;
     expect(health['ok']).toBe(true);
     expect(health['version']).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(health['schema_version']).toBe(2);
+    expect(health['schema_version']).toBe(3);
   });
 });
 

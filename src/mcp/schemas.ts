@@ -63,6 +63,25 @@ export const updateTaskShape = {
     .describe(`FULL REPLACEMENT of the dependency list. ${P.depends_on}`),
 };
 
+export const submitFeedbackShape = {
+  agent_id: agentIdSchema,
+  kind: z
+    .enum(['bug', 'friction', 'idea', 'praise'])
+    .describe(
+      "'bug' = the board misbehaved; 'friction' = a tool/description made you work harder than needed; 'idea' = a capability you wished for; 'praise' = something worked notably well.",
+    ),
+  body: z
+    .string()
+    .min(1)
+    .max(4000)
+    .describe('The feedback itself, 1-2 sentences. Include what you were trying to do when it came up.'),
+  context: z
+    .string()
+    .max(500)
+    .optional()
+    .describe('Optional: tool name / project / task id involved, if relevant.'),
+};
+
 export const getStandupShape = {
   agent_id: agentIdSchema,
   project: z.string().max(200).optional().describe(P.project),
