@@ -1,8 +1,12 @@
 /** Severity of a scope overlap with a counterpart task. */
 export type Severity = 'HIGH' | 'MEDIUM' | 'UNKNOWN';
 
-/** 'fixed' = bug awaiting regression verification (bug-type tasks only). */
-export type TaskStatus = 'planned' | 'active' | 'fixed' | 'done' | 'abandoned';
+/**
+ * 'fixed' = bug awaiting regression verification (bug-type tasks only).
+ * 'waiting' = owned work paused on an external condition (waiting_on says what);
+ * scope stays held, staleness is exempted, the heartbeat channel stays open.
+ */
+export type TaskStatus = 'planned' | 'active' | 'waiting' | 'fixed' | 'done' | 'abandoned';
 
 export type TaskType = 'dev' | 'bug';
 
@@ -41,6 +45,7 @@ export interface TaskRow {
   severity: BugSeverity | null;
   /** Free-form sprint label agreed by the team, e.g. '2026w24'. */
   iteration: string | null;
+  waiting_on: string | null;
   closing_note: string | null;
   created_at: number;
   updated_at: number;
@@ -122,4 +127,23 @@ export interface OverlapReport {
 export interface CounterpartInput {
   task: TaskRow;
   scopeRows: ScopeRowInput[];
+}
+
+export interface ResourceRow {
+  id: number;
+  project: string;
+  name: string;
+  holder_agent_id: string;
+  note: string | null;
+  claimed_at: number;
+  until: number;
+}
+
+export interface NoticeRow {
+  id: number;
+  project: string;
+  author_agent_id: string;
+  body: string;
+  created_at: number;
+  expires_at: number;
 }

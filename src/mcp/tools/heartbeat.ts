@@ -30,9 +30,9 @@ export function registerHeartbeat(server: McpServer, deps: BoardDeps): void {
         if (task.status === 'planned') {
           throw new BoardError('TASK_NOT_ACTIVE', `Task '${task.id}' is still planned — no heartbeat yet.`);
         }
-        // 'fixed' bugs keep their heartbeat channel: it is how the fixer
-        // receives a verify_fail rejection while awaiting verification.
-        if (task.status !== 'active' && task.status !== 'fixed') {
+        // 'fixed' bugs keep their heartbeat channel (verify_fail delivery), and
+        // 'waiting' tasks keep theirs (how the owner notices the wait resolved).
+        if (task.status !== 'active' && task.status !== 'fixed' && task.status !== 'waiting') {
           throw new BoardError(
             'TASK_ALREADY_CLOSED',
             `Task '${task.id}' is ${task.status} — closed tasks need no heartbeat.`,

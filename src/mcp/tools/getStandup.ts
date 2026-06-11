@@ -4,6 +4,7 @@ import { normalizeProjectSlug } from '../../core/slug.js';
 import type { Db } from '../../db/connection.js';
 import { upsertAgent } from '../../db/repo/agents.js';
 import { commentKindCountsSince, urgentCommentsSince } from '../../db/repo/comments.js';
+import { liveClaims, liveNotices } from '../../db/repo/resources.js';
 import { depInfosForTasks } from '../../db/repo/deps.js';
 import { boardTasks } from '../../db/repo/tasks.js';
 import type { BoardDeps } from '../deps.js';
@@ -31,6 +32,8 @@ export function buildStandup(db: Db, staleTtlHours: number, now: number, query: 
     ),
     commentCounts: commentKindCountsSince(db, since),
     urgentComments: urgentCommentsSince(db, since),
+    resources: liveClaims(db, now),
+    notices: liveNotices(db, now),
     staleTtlHours,
     now,
     windowHours: query.windowHours,

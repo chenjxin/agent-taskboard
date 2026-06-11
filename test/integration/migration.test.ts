@@ -102,7 +102,7 @@ describe('v1 -> v2 migration', () => {
 
     const db = openDb(path); // runs the migration
     expect(db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get()).toEqual({
-      value: '5',
+      value: '6',
     });
 
     // Rows preserved, new columns backfilled.
@@ -187,7 +187,7 @@ describe('v1 -> v2 migration', () => {
 
     const db = openDb(path); // retry succeeds
     expect(db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get()).toEqual({
-      value: '5',
+      value: '6',
     });
     db.close();
   });

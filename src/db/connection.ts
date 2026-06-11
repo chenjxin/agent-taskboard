@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export type Db = Database.Database;
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
 function baselineSql(): string {
@@ -114,6 +114,24 @@ const MIGRATIONS: Migration[] = [
         source: 'id, task_id, author_agent_id, kind, 0, body, created_at',
       });
       db.exec(baselineStatement('index', 'idx_comments_task_created'));
+    },
+  },
+  {
+    to: 6,
+    name: 'non-code coordination: waiting status, resource claims, broadcast notices',
+    up: (db) => {
+      rebuildFromBaseline(db, 'tasks', {
+        target:
+          'id, project, title, description, branch, owner_agent_id, created_by_agent_id, status, type, severity, iteration, waiting_on, closing_note, created_at, updated_at, claimed_at, fixed_at, closed_at, last_heartbeat_at',
+        source:
+          'id, project, title, description, branch, owner_agent_id, created_by_agent_id, status, type, severity, iteration, NULL, closing_note, created_at, updated_at, claimed_at, fixed_at, closed_at, last_heartbeat_at',
+      });
+      for (const idx of ['idx_tasks_project_status', 'idx_tasks_owner_status']) {
+        db.exec(baselineStatement('index', idx));
+      }
+      db.exec(baselineStatement('table', 'resources'));
+      db.exec(baselineStatement('table', 'notices'));
+      db.exec(baselineStatement('index', 'idx_notices_expiry'));
     },
   },
 ];

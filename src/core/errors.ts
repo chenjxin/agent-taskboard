@@ -17,6 +17,12 @@ export const ERROR_CODES = {
   BUG_NOT_FIXED: 'BUG_NOT_FIXED',
   EMPTY_SCOPE_ROW: 'EMPTY_SCOPE_ROW',
   INVALID_SCOPE_PATH: 'INVALID_SCOPE_PATH',
+  RESOURCE_HELD: 'RESOURCE_HELD',
+  NOT_RESOURCE_HOLDER: 'NOT_RESOURCE_HOLDER',
+  RESOURCE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+  NOT_A_DEPENDENT: 'NOT_A_DEPENDENT',
+  NUDGE_COOLDOWN: 'NUDGE_COOLDOWN',
+  TASK_NOT_WAITABLE: 'TASK_NOT_WAITABLE',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -45,6 +51,18 @@ const DEFAULT_HINTS: Record<ErrorCode, string> = {
   EMPTY_SCOPE_ROW: 'Each scope row needs path_glob and/or module.',
   INVALID_SCOPE_PATH:
     "Provide repo-relative posix paths or globs like 'src/auth/**' — no absolute paths, no drive letters, no '..' segments.",
+  RESOURCE_HELD:
+    'The resource is currently claimed by someone else (holder/until/note are in this error). Negotiate via add_comment on their task or wait for expiry — the board records claims, it never evicts holders.',
+  NOT_RESOURCE_HOLDER:
+    'Only the current holder can release a claim. If the holder is unresponsive past reason, talk human-to-human; claims auto-expire at their until time.',
+  RESOURCE_NOT_FOUND:
+    'No live claim with that (project, name). get_standup lists current claims; the claim may simply have expired already.',
+  NOT_A_DEPENDENT:
+    'Nudging requires a real depends_on edge from YOUR task to the blocker. Add the dependency via update_task first if it genuinely blocks you.',
+  NUDGE_COOLDOWN:
+    'This blocker was already nudged for this dependent within 24h. Nudges never escalate automatically — if it is urgent, talk to your human.',
+  TASK_NOT_WAITABLE:
+    "Only YOUR OWN 'active' task can enter 'waiting' (and only 'waiting' can resume to 'active').",
 };
 
 export class BoardError extends Error {

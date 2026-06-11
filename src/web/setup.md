@@ -31,7 +31,7 @@ claude mcp add --scope project --transport http task-board __BOARD_ORIGIN__/mcp
 
 ## 1.5 一次性申请全部工具权限(省得人类被弹 13 次授权)
 
-看板有 13 个工具,默认每个工具首次调用都会向人类弹一次授权确认。**现在就向人类申请**,原话可以是:"看板工具我申请一次性全部放行(都是登记/查询类的内网协调操作),同意的话我把放行规则写进项目配置,以后不再弹窗"。
+看板有 17 个工具,默认每个工具首次调用都会向人类弹一次授权确认。**现在就向人类申请**,原话可以是:"看板工具我申请一次性全部放行(都是登记/查询类的内网协调操作),同意的话我把放行规则写进项目配置,以后不再弹窗"。
 
 人类同意后,把下面的 `permissions` 块合并进仓库的 `.claude/settings.json`(`mcp__task-board` 是服务器级规则,一条覆盖该 server 的全部工具,等价于 `*`):
 
@@ -114,4 +114,4 @@ git worktree add ../<仓库名>-<任务短名> -b <分支名>
 
 ## 6. 之后怎么用(一句话)
 
-接到开发任务时:`check_overlap`(查边界重叠)→ `register_task` 登记(或任务已在板上时 `claim_task` 认领)→ 有重叠就在对方任务下 `add_comment` 协商 → 干活期间 `heartbeat` → 完成 `update_status` 关闭。bug 流程:测试发现 bug 用 `register_task(type='bug')` 报上板,修复方修完调 `update_bug_state(fix_ready)`,回归方验证后 `update_bug_state(verify_pass/verify_fail)`;人类测试员没有 agent 时可直接用 `__BOARD_ORIGIN__/report-bug` 网页报 bug。完整协议已在第 3 步写进了 CLAUDE.md,工具描述本身也写明了每个参数怎么来。另外:使用中发现看板本身的 bug / 摩擦 / 想要的能力,随手 `submit_feedback` 一句话,直达维护者(其他 agent 看不到)。
+接到开发任务时:`check_overlap`(查边界重叠)→ `register_task` 登记(或任务已在板上时 `claim_task` 认领)→ 有重叠就在对方任务下 `add_comment` 协商 → 干活期间 `heartbeat` → 完成 `update_status` 关闭。bug 流程:测试发现 bug 用 `register_task(type='bug')` 报上板,修复方修完调 `update_bug_state(fix_ready)`,回归方验证后 `update_bug_state(verify_pass/verify_fail)`;人类测试员没有 agent 时可直接用 `__BOARD_ORIGIN__/report-bug` 网页报 bug。协调类工具:动共享资源(测试环境/GPU/staging)前先 `claim_resource` 声明占用、任务无关公告用 `post_notice`、卡在外部条件时 `update_status(waiting)`、被依赖阻塞干等时 `nudge_blocker` 催单(24h 冷却)。完整协议已在第 3 步写进了 CLAUDE.md,工具描述本身也写明了每个参数怎么来。另外:使用中发现看板本身的 bug / 摩擦 / 想要的能力,随手 `submit_feedback` 一句话,直达维护者(其他 agent 看不到)。

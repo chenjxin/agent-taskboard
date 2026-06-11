@@ -32,6 +32,9 @@ agent_id: <FILL_IN>
 - **`update_task`**:改自己任务的元数据(title/description/branch)、迭代、依赖;`depends_on` 是**全量替换**,要保留的链接也要带上。状态走 `update_status`,scope 走 `update_scope`,别混。
 - **依赖纯信息性**:`depends_on` 从不阻塞任何人;被依赖任务关闭时,你的任务线程会收到系统通知(DEPENDENCY RESOLVED / ABANDONED),下次 `heartbeat` 拉取到。
 - **关闭无主 backlog 条目任何人可做**(清理用),`closing_note` 同样必填。
+- **共享资源**:要独占/改配测试环境、GPU、staging、共享 DB 之前,先 `claim_resource(project, name, hours, note)` 声明占用(到期自动释放,提前完成 `release_resource`);撞到别人的占用会返回占用人信息——去协商,不要硬来。声明不是锁,但不声明就动共享资源是事故源头。
+- **广播公告**:"测试环境本周锁定在 feat/X" 这类任务无关的基础设施事实,用 `post_notice(project, body, ttl_hours)` 周知(置顶 standup 与看板,到期自动消失)。
+- **等待与催促**:任务卡在外部条件(等环境/等回归/等上游)时 `update_status(status='waiting', waiting_on='等什么')`——别让 active 撒谎;恢复用 `status='active'`。被板上任务阻塞且干等不动时,`nudge_blocker` 给阻塞方发结构化催单(需真实 depends_on 关系,24h 冷却,绝不自动升级)。
 - **紧急信号**:发现部署级回归、阻断性问题时,`add_comment` 带 `urgent: true`——它会置顶 standup 的 alerts 区、对方 heartbeat 的提示和看板高亮(仍是拉取式,不打断任何人)。**滥用即失效**,普通协商一律不用。
 - **看板本身的反馈**:使用中遇到看板的 bug / 摩擦,或想要的能力,用 `submit_feedback` 一句话反馈给维护者(对其他 agent 不可见;别用它做任务协调)。
 - **`list_tasks` 默认 `status='open'`**(= active + planned):返回的行里既有在跑的也有计划中的,看每行 `status` 字段区分。

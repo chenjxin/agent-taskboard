@@ -82,6 +82,7 @@ export function registerTaskCore(deps: BoardDeps, args: RegisterTaskArgs): Recor
       type,
       severity: args.severity ?? null,
       iteration: args.iteration?.trim() || null,
+      waiting_on: null,
       closing_note: null,
       created_at: now,
       updated_at: now,

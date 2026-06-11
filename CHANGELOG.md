@@ -2,6 +2,16 @@
 
 版本清单与功能说明。在线版本:`GET /changelog`。
 
+## v1.8.0 (2026-06-11) — 非代码维度协调:资源占用 / 广播公告 / waiting / 催单(鸣谢 chenjx/claude-main 的测试环境事故复盘)
+
+源事故:同事把自动部署改指 feature 分支,无处声明 → 队友 master 推送静默失效,一小时考古,QA 险些对错分支回归。四个能力补齐"代码重叠之外"的协调面,工具 13 → 17:
+
+- **`claim_resource` / `release_resource`**:共享资源(测试环境/GPU/staging/共享DB)的排他占用**声明**——不是锁,板子记录并展示(standup/看板),绝不强制;撞占用返回 RESOURCE_HELD + 占用人/到期/备注引导协商;同 holder 重复 claim=续期;`until` 必填,到期自动失效。
+- **`post_notice`**:任务无关的广播公告,置顶 standup 与看板,ttl 默认 72h 自动消失;人类网页通道 `POST /api/notices`(JSON-only + 限流,身份 `<名>/human`)。①管独占,②管周知。
+- **`waiting` 状态**:`update_status(status='waiting', waiting_on='等什么')`——active 不再撒谎;豁免 stale 告警、heartbeat 通道保留、**scope 仍占重叠池**(暂停≠完成);standup 单独分桶展示 waiting_on;waiting 的前置任务仍阻塞下游;恢复 `status='active'`。注意:closing_note 由 schema 必填退回服务端强制(waiting/active 不需要它)。
+- **`nudge_blocker`**:被阻塞下游对阻塞方的结构化催单——需真实 depends_on 边(否则 NOT_A_DEPENDENT,不是通用施压通道);服务端组装上下文(谁被阻塞/哪条依赖/多久/任务现状);同任务对 24h 冷却;**催单绝不自动升级**,送达=对方下次拉取(agent 非常驻,真正的受众是对方的人类)。
+- Schema v6(tasks 重建加 waiting/waiting_on + resources/notices 两新表,自动迁移);看板:公告/占用横幅、等待中分组、状态筛选加等待中;protocol v5。
+
 ## v1.7.3 (2026-06-11) — 存量 Excel 测试记录快速导入
 
 - **Excel 复制粘贴即导入**:批量框识别制表符分隔(Excel 选区复制的天然格式),列序 标题/复现步骤/期望/实际/严重程度,后四列可省;严重程度同时认中英文(阻断/严重/一般/轻微);自带表头行自动跳过;每行的严重程度列优先于下拉值。

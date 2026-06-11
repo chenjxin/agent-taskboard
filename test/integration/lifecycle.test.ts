@@ -57,12 +57,10 @@ describe('update_status', () => {
     });
     expect(notOwner['error_code']).toBe('NOT_TASK_OWNER');
 
-    // closing_note is now required at the SCHEMA level too — the SDK rejects
-    // before the handler (no wasted round-trip); whitespace-only still reaches
-    // the handler's educational VALIDATION_ERROR.
-    const noNote = await b.call('update_status', { agent_id: 'alice/claude', task_id: id, status: 'done' });
-    expect(noNote.isError).toBe(true);
-    expect((noNote.content?.[0] as { text: string }).text).toMatch(/Invalid arguments/);
+    // closing_note went schema-OPTIONAL in v1.8 (waiting/active need none), so
+    // omission on close reaches the handler's educational VALIDATION_ERROR.
+    const noNote = await b.callErr('update_status', { agent_id: 'alice/claude', task_id: id, status: 'done' });
+    expect(noNote['error_code']).toBe('VALIDATION_ERROR');
     const blankNote = await b.callErr('update_status', {
       agent_id: 'alice/claude',
       task_id: id,
@@ -73,14 +71,23 @@ describe('update_status', () => {
     expect(blankNote['message']).toContain('closing_note');
 
     // 'active' is excluded at the schema level (z.enum) — there is no transition back.
-    const badStatus = await b.call('update_status', {
+    // 'active' is a valid enum since v1.8 (resume-from-waiting) — on an already
+    // active task it lands in the handler's TASK_NOT_WAITABLE, not schema rejection.
+    const badStatus = await b.callErr('update_status', {
       agent_id: 'alice/claude',
       task_id: id,
       status: 'active',
       closing_note: 'x',
     });
-    expect(badStatus.isError).toBe(true);
-    expect((badStatus.content?.[0] as { text: string }).text).toMatch(/Invalid arguments/);
+    expect(badStatus['error_code']).toBe('TASK_NOT_WAITABLE');
+    const bogusStatus = await b.call('update_status', {
+      agent_id: 'alice/claude',
+      task_id: id,
+      status: 'paused',
+      closing_note: 'x',
+    });
+    expect(bogusStatus.isError).toBe(true);
+    expect((bogusStatus.content?.[0] as { text: string }).text).toMatch(/Invalid arguments/);
 
     const closed = await b.callOk('update_status', {
       agent_id: 'alice/claude',

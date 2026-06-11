@@ -11,6 +11,7 @@ import { BoardError } from '../core/errors.js';
 import type { BugSeverity } from '../core/types.js';
 import { allAgents } from '../db/repo/agents.js';
 import { allFeedback } from '../db/repo/feedback.js';
+import { insertNotice } from '../db/repo/resources.js';
 import { reportMeta } from '../db/repo/scopes.js';
 import { registerTaskCore, updateBugStateCore } from '../mcp/cores.js';
 import { buildBoardData } from '../web/boardData.js';
@@ -244,6 +245,34 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
 
   // Human bug report. Identity: client sends a bare NAME, the server appends
   // '/human' — the form can never impersonate a full agent_id like 'alice/claude'.
+  // Human one-liner announcements (the friction must be near zero, or infra
+  // facts stay unannounced — the v1.8 incident). Same write rules as /api/bugs.
+  app.post('/api/notices', auth, bugWriteLimiter, jsonOnly, (req, res) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const name = str(b['name']);
+      if (!HUMAN_NAME_RE.test(name)) {
+        throw new BoardError(
+          'VALIDATION_ERROR',
+          'name must be 1-50 chars of letters/digits/._- (no slash).',
+          "只填人名,系统会记录为 '<姓名>/human'。",
+        );
+      }
+      const project = str(b['project']);
+      const body = str(b['body']);
+      const ttl = typeof b['ttl_hours'] === 'number' ? b['ttl_hours'] : 72;
+      if (!project || !body) throw new BoardError('VALIDATION_ERROR', 'project and body are required.');
+      if (project.length > 200 || body.length > 1000 || ttl < 1 || ttl > 168) {
+        throw new BoardError('VALIDATION_ERROR', 'Limits: project <= 200, body <= 1000, ttl_hours 1-168.');
+      }
+      const now = deps.now();
+      const notice = insertNotice(deps.db, project, `${name}/human`, body, now, now + ttl * 3_600_000);
+      res.status(201).json({ ok: true, notice });
+    } catch (e) {
+      sendBoardError(res, req.path, e);
+    }
+  });
+
   // Dropdown vocabulary for the report-bug form (projects + declared modules).
   app.get('/api/report-meta', auth, (_req, res) => {
     try {

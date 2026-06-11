@@ -32,7 +32,7 @@ describe('information-tier bug routing (related_backlog)', () => {
     const mine = buildBoardData(b.db, 8, T0 + 2 * HOUR, { owner: 'alice/claude' });
     expect(mine.related_backlog!.map((r) => r.task_id)).toEqual([bugId]);
     expect(mine.related_backlog![0]!.match).toBe('MEDIUM');
-    expect(mine.protocol_version).toBe(4);
+    expect(mine.protocol_version).toBe(5);
 
     // An agent with no turf contact sees nothing; no owner query -> field absent.
     const other = buildBoardData(b.db, 8, T0 + 2 * HOUR, { owner: 'stranger/claude' });

@@ -93,18 +93,22 @@ describe('register_task', () => {
     }
   });
 
-  it('exposes all 13 tools and the server instructions', async () => {
+  it('exposes all 17 tools and the server instructions', async () => {
     const b = await makeTestBoard();
     const tools = await b.client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
       'add_comment',
       'check_overlap',
+      'claim_resource',
       'claim_task',
       'get_standup',
       'get_task',
       'heartbeat',
       'list_tasks',
+      'nudge_blocker',
+      'post_notice',
       'register_task',
+      'release_resource',
       'submit_feedback',
       'update_bug_state',
       'update_scope',

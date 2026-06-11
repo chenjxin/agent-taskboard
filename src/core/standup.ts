@@ -4,7 +4,7 @@
  * stale at a glance, for agents at task receipt and humans on the board.
  */
 import { isStale } from './staleness.js';
-import type { DepInfo, TaskRow } from './types.js';
+import type { DepInfo, NoticeRow, ResourceRow, TaskRow } from './types.js';
 
 export interface StandupTaskRef {
   task_id: string;
@@ -40,6 +40,8 @@ export interface ProjectStandup {
   blocked: StandupTaskRef[];
   /** Bugs currently awaiting regression verification (NOW fact). */
   awaiting_verification: StandupTaskRef[];
+  /** Owned tasks paused on an external condition (NOW fact; waiting_on says what). */
+  waiting: Array<StandupTaskRef & { waiting_on: string | null }>;
   /** Currently stale active tasks (advisory, derived). */
   stale: StandupTaskRef[];
   overlap_notices: number;
@@ -66,6 +68,10 @@ export interface StandupReport {
    * in the project).
    */
   alerts: StandupAlert[];
+  /** Live exclusive holds on shared resources (test env, GPU...) — NOW facts. */
+  resources: ResourceRow[];
+  /** Live broadcast announcements, newest first — read before planning. */
+  notices: NoticeRow[];
   projects: ProjectStandup[];
   /** Present only when an iteration filter was given. */
   iteration_stock: IterationStock | null;
@@ -79,6 +85,10 @@ export interface StandupInput {
   commentCounts: Array<{ project: string; kind: string; n: number }>;
   /** Urgent comments on open tasks within the window (newest first). */
   urgentComments: StandupAlert[];
+  /** Live resource claims (already expiry-filtered). */
+  resources: ResourceRow[];
+  /** Live broadcast notices (already expiry-filtered). */
+  notices: NoticeRow[];
   staleTtlHours: number;
   now: number;
   windowHours: number;
@@ -106,7 +116,9 @@ function ref(t: TaskRow): StandupTaskRef {
  * their DEPENDENCY RESOLVED notice.
  */
 export function blockingDeps(deps: DepInfo[]): DepInfo[] {
-  return deps.filter((d) => d.status === 'planned' || d.status === 'active' || d.status === 'fixed');
+  return deps.filter(
+    (d) => d.status === 'planned' || d.status === 'active' || d.status === 'waiting' || d.status === 'fixed',
+  );
 }
 
 export function computeStandup(input: StandupInput): StandupReport {
@@ -129,6 +141,7 @@ export function computeStandup(input: StandupInput): StandupReport {
         planned_added: [],
         blocked: [],
         awaiting_verification: [],
+        waiting: [],
         stale: [],
         overlap_notices: 0,
         boundary_agreements: 0,
@@ -159,6 +172,9 @@ export function computeStandup(input: StandupInput): StandupReport {
     if (t.status === 'fixed') {
       p.awaiting_verification.push(ref(t));
     }
+    if (t.status === 'waiting') {
+      p.waiting.push({ ...ref(t), waiting_on: t.waiting_on });
+    }
     if (t.status === 'active' && isStale(t.last_heartbeat_at, staleTtlHours, now)) {
       p.stale.push(ref(t));
     }
@@ -185,7 +201,7 @@ export function computeStandup(input: StandupInput): StandupReport {
     .filter(
       (p) =>
         p.completed.length + p.abandoned.length + p.started.length + p.planned_added.length +
-          p.blocked.length + p.awaiting_verification.length + p.stale.length +
+          p.blocked.length + p.awaiting_verification.length + p.waiting.length + p.stale.length +
           p.overlap_notices + p.boundary_agreements >
         0,
     )
@@ -194,6 +210,10 @@ export function computeStandup(input: StandupInput): StandupReport {
   const alerts = input.urgentComments.filter(
     (a) => !input.project || a.project === input.project,
   );
+  // Like alerts: project-scoped but never iteration-scoped — holds and
+  // announcements are environment facts, not sprint items.
+  const resources = input.resources.filter((r) => !input.project || r.project === input.project);
+  const notices = input.notices.filter((n) => !input.project || n.project === input.project);
 
-  return { window_hours: windowHours, since, until: now, alerts, projects, iteration_stock: iterationStock };
+  return { window_hours: windowHours, since, until: now, alerts, resources, notices, projects, iteration_stock: iterationStock };
 }

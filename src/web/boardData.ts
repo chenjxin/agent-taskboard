@@ -1,11 +1,12 @@
 import { isBroadGlob } from '../core/globs.js';
 import { hoursSince, isStale } from '../core/staleness.js';
 import { blockingDeps } from '../core/standup.js';
-import type { BugSeverity, CommentKind, DepInfo, TaskStatus, TaskType } from '../core/types.js';
+import type { BugSeverity, CommentKind, DepInfo, NoticeRow, ResourceRow, TaskStatus, TaskType } from '../core/types.js';
 import type { Db } from '../db/connection.js';
 import { countByTask, recentByTask } from '../db/repo/comments.js';
 import { depInfosForTasks } from '../db/repo/deps.js';
 import { scopesByTasks } from '../db/repo/scopes.js';
+import { liveClaims, liveNotices } from '../db/repo/resources.js';
 import { relatedBacklogForAgent, type RelatedBacklogBug } from '../db/repo/routing.js';
 import { boardTasks, listTasks, type StatusFilter } from '../db/repo/tasks.js';
 
@@ -14,7 +15,7 @@ const ROW_CAP = 500;
 
 /** Rides into teammates' agent context via the SessionStart hook (raw JSON dump). */
 const PROTOCOL_HINT =
-  "Board protocol v4: tasks may be 'planned', including unowned backlog items (owner null) — claim_task before working on one; bugs are type='bug' tasks with a verification lifecycle (fix_ready -> fixed/待回归 -> verify_pass|verify_fail via update_bug_state); check_overlap covers planned tasks; get_standup returns a 24h digest incl. awaiting_verification; closing a task auto-notifies dependents. With ?owner= the payload adds related_backlog: unclaimed bugs overlapping that agent's historical task scopes — information only, mention to your human before claiming. The board has a backlog but never assigns work.";
+  "Board protocol v5: tasks may be 'planned', including unowned backlog items (owner null) — claim_task before working on one; bugs are type='bug' tasks with a verification lifecycle (fix_ready -> fixed/待回归 -> verify_pass|verify_fail via update_bug_state); check_overlap covers planned tasks; get_standup returns a 24h digest incl. awaiting_verification; closing a task auto-notifies dependents. With ?owner= the payload adds related_backlog: unclaimed bugs overlapping that agent's historical task scopes — information only, mention to your human before claiming. 'waiting' tasks are paused on an external condition (waiting_on) and still hold their scope. resources lists live exclusive holds on shared infra (claim_resource before repointing anything shared), notices lists live broadcast announcements (post_notice) — read both before touching shared environments. The board has a backlog but never assigns work.";
 
 export interface BoardQuery {
   project?: string | undefined;
@@ -32,6 +33,7 @@ export interface BoardTask {
   severity: BugSeverity | null;
   fixed_at: number | null;
   iteration: string | null;
+  waiting_on: string | null;
   created_at: number;
   updated_at: number;
   claimed_at: number | null;
@@ -66,6 +68,10 @@ export interface BoardPayload {
   generated_at: number;
   stale_ttl_hours: number;
   projects: Array<{ project: string; iterations: IterationStat[]; tasks: BoardTask[] }>;
+  /** Live exclusive resource holds (test env, GPU...) — declarations, not locks. */
+  resources: ResourceRow[];
+  /** Live broadcast announcements, newest first. */
+  notices: NoticeRow[];
   /**
    * Only with an ?owner= query (the SessionStart-hook shape): unclaimed backlog
    * bugs overlapping that agent's historical task scopes. Information-tier
@@ -74,7 +80,7 @@ export interface BoardPayload {
   related_backlog?: RelatedBacklogBug[];
 }
 
-const STATUS_FILTERS = new Set(['planned', 'active', 'fixed', 'done', 'abandoned', 'all', 'open']);
+const STATUS_FILTERS = new Set(['planned', 'active', 'waiting', 'fixed', 'done', 'abandoned', 'all', 'open']);
 
 function iterationStats(tasks: BoardTask[]): IterationStat[] {
   const byIteration = new Map<string, BoardTask[]>();
@@ -95,7 +101,7 @@ function iterationStats(tasks: BoardTask[]): IterationStat[] {
         iteration,
         total: rows.length,
         planned: rows.filter((t) => t.status === 'planned').length,
-        active: rows.filter((t) => t.status === 'active').length,
+        active: rows.filter((t) => t.status === 'active' || t.status === 'waiting').length,
         fixed: rows.filter((t) => t.status === 'fixed').length,
         done: done.length,
         abandoned: rows.filter((t) => t.status === 'abandoned').length,
@@ -144,6 +150,7 @@ export function buildBoardData(
       severity: t.severity,
       fixed_at: t.fixed_at,
       iteration: t.iteration,
+      waiting_on: t.waiting_on,
       created_at: t.created_at,
       updated_at: t.updated_at,
       claimed_at: t.claimed_at,
@@ -171,13 +178,15 @@ export function buildBoardData(
   }
 
   return {
-    protocol_version: 4,
+    protocol_version: 5,
     protocol_hint: PROTOCOL_HINT,
     generated_at: now,
     stale_ttl_hours: staleTtlHours,
     projects: [...byProject.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([project, tasks]) => ({ project, iterations: iterationStats(tasks), tasks })),
+    resources: query.project ? liveClaims(db, now, query.project) : liveClaims(db, now),
+    notices: query.project ? liveNotices(db, now, query.project) : liveNotices(db, now),
     ...(query.owner ? { related_backlog: relatedBacklogForAgent(db, query.owner) } : {}),
   };
 }

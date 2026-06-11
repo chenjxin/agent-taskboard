@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '5');
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '6');
 
 -- Self-reported identities ('human/agent'), auto-upserted on every tool call.
 CREATE TABLE IF NOT EXISTS agents (
@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS agents (
 
 -- owner NULL = unclaimed backlog item (legal only while status is 'planned').
 -- No stale column: staleness is derived at read time from last_heartbeat_at + TTL.
+-- 'waiting' = owned work paused on an external condition (waiting_on says what) --
+-- scope stays held, staleness is exempted, heartbeat channel stays open.
 CREATE TABLE IF NOT EXISTS tasks (
   id                  TEXT PRIMARY KEY,
   project             TEXT NOT NULL,
@@ -28,10 +30,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   branch              TEXT,
   owner_agent_id      TEXT REFERENCES agents(agent_id),
   created_by_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
-  status              TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('planned', 'active', 'fixed', 'done', 'abandoned')),
+  status              TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('planned', 'active', 'waiting', 'fixed', 'done', 'abandoned')),
   type                TEXT NOT NULL DEFAULT 'dev',
   severity            TEXT,
   iteration           TEXT,
+  waiting_on          TEXT,
   closing_note        TEXT,
   created_at          INTEGER NOT NULL,
   updated_at          INTEGER NOT NULL,
@@ -39,8 +42,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   fixed_at            INTEGER,
   closed_at           INTEGER,
   last_heartbeat_at   INTEGER NOT NULL,
-  CHECK (status != 'active' OR owner_agent_id IS NOT NULL),
-  CHECK (status != 'fixed' OR type = 'bug')
+  CHECK (status NOT IN ('active', 'waiting') OR owner_agent_id IS NOT NULL),
+  CHECK (status != 'fixed' OR type = 'bug'),
+  CHECK (status != 'waiting' OR waiting_on IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_status ON tasks(owner_agent_id, status);
@@ -80,6 +84,33 @@ CREATE TABLE IF NOT EXISTS feedback (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+
+-- Exclusive shared-resource claims (test env, GPU pool, staging...): a row is a
+-- DECLARATION of a current hold, never an enforced lock -- the board informs.
+-- One live claim per (project, name). until is mandatory: claims always expire.
+-- Expired rows are filtered on read and lazily deleted on the next write.
+CREATE TABLE IF NOT EXISTS resources (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  project         TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  holder_agent_id TEXT NOT NULL,
+  note            TEXT,
+  claimed_at      INTEGER NOT NULL,
+  until           INTEGER NOT NULL,
+  UNIQUE (project, name)
+);
+
+-- Task-free broadcast announcements ("test env pinned to feat/X until Friday").
+-- Top the standup while alive, expire automatically.
+CREATE TABLE IF NOT EXISTS notices (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  project         TEXT NOT NULL,
+  author_agent_id TEXT NOT NULL,
+  body            TEXT NOT NULL,
+  created_at      INTEGER NOT NULL,
+  expires_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notices_expiry ON notices(expires_at);
 
 -- task_id depends on depends_on_task_id ("blocked by"). Informational only.
 CREATE TABLE IF NOT EXISTS task_deps (

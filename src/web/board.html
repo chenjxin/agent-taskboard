@@ -88,6 +88,11 @@
   .badge.st-done { color: var(--accent); }
   .badge.stale { color: var(--amber-fg); border-color: var(--amber-bd); background: var(--amber-bg); cursor: help; }
   .badge.st-fixed { color: var(--mod-fg); border-color: var(--mod-bd); background: var(--mod-bg); }
+  .badge.st-waiting { color: var(--amber-fg); border-color: var(--amber-bd); background: var(--amber-bg); }
+  .board-notices { max-width: 1500px; margin: 8px auto 0; padding: 0 20px; }
+  .board-notices p { margin: 4px 0; padding: 6px 10px; border-radius: 6px; font-size: 13px;
+    border: 1px solid var(--amber-bd); background: var(--amber-bg); color: var(--amber-fg); }
+  .board-notices p.resource { border-color: var(--mod-bd); background: var(--mod-bg); color: var(--mod-fg); }
   .badge.bug { color: var(--red-fg); }
   .badge.sev-critical { color: var(--red-fg); border-color: var(--red-bd); background: var(--red-bg); }
   .badge.sev-high { color: var(--orange-fg); border-color: var(--orange-bd); background: var(--orange-bg); }
@@ -189,6 +194,7 @@
     <select id="status-filter">
       <option value="all" selected>全部</option>
       <option value="active">进行中</option>
+      <option value="waiting">等待中</option>
       <option value="fixed">待回归</option>
       <option value="planned">计划 / backlog</option>
       <option value="closed">已关闭</option>
@@ -202,6 +208,7 @@
   <summary>过去 24h 站会摘要</summary>
   <div id="standup-body"><p class="empty">loading…</p></div>
 </details>
+<div id="board-notices" class="board-notices"></div>
 <main id="board"><p class="empty">loading…</p></main>
 <script>
 'use strict';
@@ -210,7 +217,7 @@
 // contains zero direct-HTML sinks (inner/outer HTML, adjacent-HTML insertion).
 
 const POLL_MS = 10000;
-const STATUSES = { planned: 'planned', active: 'active', fixed: 'fixed', done: 'done', abandoned: 'abandoned' };
+const STATUSES = { planned: 'planned', active: 'active', waiting: 'waiting', fixed: 'fixed', done: 'done', abandoned: 'abandoned' };
 const KINDS = { comment: 'comment', boundary_agreement: 'boundary_agreement', overlap_notice: 'overlap_notice' };
 const SEVERITIES = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' };
 
@@ -327,6 +334,9 @@ function taskCard(t, now) {
   } else if (status === 'fixed') {
     // awaiting regression verification: no heartbeat/STALE chrome, no closed_at yet
     meta.appendChild(timeEl('修复于', t.fixed_at, now));
+  } else if (status === 'waiting') {
+    // paused on an external condition: stale chrome deliberately absent
+    if (t.waiting_on) meta.appendChild(chip('chip blocked', '⏸ 等待: ' + t.waiting_on));
   } else if (t.closed_at != null) {
     meta.appendChild(timeEl('closed', t.closed_at, now));
   }
@@ -436,6 +446,7 @@ function iterStatLabel(it) {
 function projectSection(p, now) {
   const section = el('section', 'project');
   const active = p.tasks.filter((t) => t.status === 'active');
+  const waiting = p.tasks.filter((t) => t.status === 'waiting');
   const fixed = p.tasks.filter((t) => t.status === 'fixed');
   const planned = p.tasks.filter((t) => t.status === 'planned');
   // 'fixed' deliberately excluded: awaiting regression is not closed.
@@ -457,6 +468,13 @@ function projectSection(p, now) {
   if (active.length === 0) grid.appendChild(el('p', 'empty', 'no active tasks'));
   for (const t of active) grid.appendChild(taskCard(t, now));
   section.appendChild(grid);
+
+  if (waiting.length > 0) {
+    section.appendChild(el('h3', 'group-head', '等待中 (' + waiting.length + ')'));
+    const waitingGrid = el('div', 'grid');
+    for (const t of waiting) waitingGrid.appendChild(taskCard(t, now));
+    section.appendChild(waitingGrid);
+  }
 
   if (fixed.length > 0) {
     section.appendChild(el('h3', 'group-head', '待回归 (' + fixed.length + ')'));
@@ -489,6 +507,7 @@ const STANDUP_GROUPS = [
   ['started', 'started'],
   ['planned_added', 'planned added'],
   ['awaiting_verification', '待回归'],
+  ['waiting', '等待中'],
   ['blocked', 'blocked'],
   ['stale', 'stale'],
 ];
@@ -576,6 +595,23 @@ function taskMatches(t) {
   return true;
 }
 
+function renderNotices() {
+  const box = document.getElementById('board-notices');
+  box.replaceChildren();
+  const notices = (state.data && state.data.notices) || [];
+  const resources = (state.data && state.data.resources) || [];
+  for (const n of notices) {
+    const line = el('p', null, '📢 [' + n.project + '] ' + n.body + ' — ' + n.author_agent_id);
+    line.title = '到期 ' + new Date(n.expires_at).toLocaleString();
+    box.appendChild(line);
+  }
+  for (const r of resources) {
+    const line = el('p', 'resource', '🔒 [' + r.project + '] ' + r.name + ' 由 ' + r.holder_agent_id +
+      ' 占用至 ' + new Date(r.until).toLocaleString() + (r.note ? ' — ' + r.note : ''));
+    box.appendChild(line);
+  }
+}
+
 function renderBoard() {
   $board.replaceChildren();
   const filtering = state.typeFilter !== 'all' || state.statusFilter !== 'all' || state.keyword !== '';
@@ -616,6 +652,7 @@ function render() {
   }
   $ttl.textContent = '· stale after ' + state.data.stale_ttl_hours + 'h (advisory)';
   renderFilter();
+  renderNotices();
   renderBoard();
 }
 

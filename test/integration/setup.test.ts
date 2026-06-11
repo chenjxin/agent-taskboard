@@ -67,7 +67,7 @@ describe('GET /healthz version info', () => {
     const health = (await (await fetch(`${base}/healthz`)).json()) as Record<string, unknown>;
     expect(health['ok']).toBe(true);
     expect(health['version']).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(health['schema_version']).toBe(5);
+    expect(health['schema_version']).toBe(6);
   });
 });
 

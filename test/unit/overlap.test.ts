@@ -18,6 +18,7 @@ function mkTask(id: string, overrides: Partial<TaskRow> = {}): TaskRow {
     status: 'active',
     type: 'dev',
     severity: null,
+    waiting_on: null,
     fixed_at: null,
     iteration: null,
     closing_note: null,

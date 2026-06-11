@@ -4,9 +4,9 @@ import type { Db } from '../connection.js';
 export function insertTask(db: Db, task: TaskRow): void {
   db.prepare(
     `INSERT INTO tasks (id, project, title, description, branch, owner_agent_id, created_by_agent_id,
-                        status, type, severity, iteration, closing_note, created_at, updated_at, claimed_at, fixed_at, closed_at, last_heartbeat_at)
+                        status, type, severity, iteration, waiting_on, closing_note, created_at, updated_at, claimed_at, fixed_at, closed_at, last_heartbeat_at)
      VALUES (@id, @project, @title, @description, @branch, @owner_agent_id, @created_by_agent_id,
-             @status, @type, @severity, @iteration, @closing_note, @created_at, @updated_at, @claimed_at, @fixed_at, @closed_at, @last_heartbeat_at)`,
+             @status, @type, @severity, @iteration, @waiting_on, @closing_note, @created_at, @updated_at, @claimed_at, @fixed_at, @closed_at, @last_heartbeat_at)`,
   ).run(task);
 }
 
@@ -18,7 +18,7 @@ export type StatusFilter = TaskStatus | 'open' | 'all';
 
 export interface ListTasksFilters {
   project?: string | undefined;
-  /** 'open' = planned + active + fixed (not yet verified/closed). */
+  /** 'open' = planned + active + waiting + fixed (not yet verified/closed). */
   status?: StatusFilter | undefined;
   ownerAgentId?: string | undefined;
   createdByAgentId?: string | undefined;
@@ -36,7 +36,7 @@ export function listTasks(db: Db, filters: ListTasksFilters): TaskRow[] {
   }
   const status = filters.status ?? 'open';
   if (status === 'open') {
-    where.push(`status IN ('planned', 'active', 'fixed')`);
+    where.push(`status IN ('planned', 'active', 'waiting', 'fixed')`);
   } else if (status !== 'all') {
     where.push('status = @status');
     params['status'] = status;
@@ -64,14 +64,15 @@ export function listTasks(db: Db, filters: ListTasksFilters): TaskRow[] {
 }
 
 /**
- * The overlap-counterpart pool: same-project planned+active tasks, excluding
- * the caller's own. Deliberately NARROWER than the 'open' display filter:
- * 'fixed' work is finished code awaiting verification, not contested ground.
+ * The overlap-counterpart pool: same-project planned+active+waiting tasks,
+ * excluding the caller's own. Deliberately NARROWER than the 'open' display
+ * filter: 'fixed' work is finished code awaiting verification, not contested
+ * ground — but 'waiting' work is merely paused and still holds its scope.
  */
 export function overlapPoolTasks(db: Db, project: string, excludeTaskId?: string): TaskRow[] {
   return db
     .prepare(
-      `SELECT * FROM tasks WHERE project = ? AND status IN ('planned', 'active') AND id != ? ORDER BY created_at`,
+      `SELECT * FROM tasks WHERE project = ? AND status IN ('planned', 'active', 'waiting') AND id != ? ORDER BY created_at`,
     )
     .all(project, excludeTaskId ?? '') as TaskRow[];
 }
@@ -79,7 +80,7 @@ export function overlapPoolTasks(db: Db, project: string, excludeTaskId?: string
 /** Distinct project slugs with open tasks (for did-you-mean warnings). */
 export function distinctOpenProjects(db: Db): string[] {
   const rows = db
-    .prepare(`SELECT DISTINCT project FROM tasks WHERE status IN ('planned', 'active')`)
+    .prepare(`SELECT DISTINCT project FROM tasks WHERE status IN ('planned', 'active', 'waiting')`)
     .all() as Array<{ project: string }>;
   return rows.map((r) => r.project);
 }
@@ -88,10 +89,38 @@ export function distinctOpenProjects(db: Db): string[] {
 export function boardTasks(db: Db, closedSinceMs: number, limit: number): TaskRow[] {
   return db
     .prepare(
-      `SELECT * FROM tasks WHERE status IN ('planned', 'active', 'fixed') OR closed_at >= ?
+      `SELECT * FROM tasks WHERE status IN ('planned', 'active', 'waiting', 'fixed') OR closed_at >= ?
        ORDER BY project, created_at LIMIT ?`,
     )
     .all(closedSinceMs, limit) as TaskRow[];
+}
+
+/**
+ * active -> waiting: paused on an external condition. waiting_on records WHAT
+ * (the whole point — standup readers see why no progress is expected).
+ * Guarded UPDATE: returns false when the task is not currently active.
+ */
+export function setWaiting(db: Db, id: string, waitingOn: string, now: number): boolean {
+  return (
+    db
+      .prepare(
+        `UPDATE tasks SET status = 'waiting', waiting_on = ?, updated_at = ?
+         WHERE id = ? AND status = 'active'`,
+      )
+      .run(waitingOn, now, id).changes > 0
+  );
+}
+
+/** waiting -> active: the external condition resolved; waiting_on is cleared. */
+export function resumeFromWaiting(db: Db, id: string, now: number): boolean {
+  return (
+    db
+      .prepare(
+        `UPDATE tasks SET status = 'active', waiting_on = NULL, updated_at = ?, last_heartbeat_at = ?
+         WHERE id = ? AND status = 'waiting'`,
+      )
+      .run(now, now, id).changes > 0
+  );
 }
 
 /** Guarded close: only not-yet-closed rows transition. Returns false if a concurrent writer won. */
@@ -105,7 +134,7 @@ export function setStatus(
   const info = db
     .prepare(
       `UPDATE tasks SET status = ?, closing_note = ?, closed_at = ?, updated_at = ?
-       WHERE id = ? AND status IN ('planned', 'active', 'fixed')`,
+       WHERE id = ? AND status IN ('planned', 'active', 'waiting', 'fixed')`,
     )
     .run(status, closingNote, now, now, id);
   return info.changes === 1;

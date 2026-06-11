@@ -143,10 +143,39 @@ export const addCommentShape = {
 export const updateStatusShape = {
   agent_id: agentIdSchema,
   task_id: z.string().min(1).max(50).describe(P.task_id),
-  status: z.enum(['done', 'abandoned']).describe(P.close_status),
-  // Required at the schema level too — omitting it used to burn a round-trip
-  // before the (educational) server-side rejection arrived.
-  closing_note: z.string().min(1).max(4000).describe(P.closing_note),
+  status: z.enum(['done', 'abandoned', 'waiting', 'active']).describe(P.close_status),
+  // Schema-optional ONLY because waiting/active need none — the server still
+  // hard-requires it for done/abandoned with an educational error.
+  closing_note: z.string().min(1).max(4000).optional().describe(P.closing_note),
+  waiting_on: z.string().min(1).max(500).optional().describe(P.waiting_on),
+};
+
+export const claimResourceShape = {
+  agent_id: agentIdSchema,
+  project: z.string().min(1).max(200).describe(P.project),
+  name: z.string().min(1).max(100).describe(P.resource_name),
+  hours: z.number().min(0.1).max(336).describe(P.resource_hours),
+  note: z.string().max(500).optional().describe(P.resource_note),
+};
+
+export const releaseResourceShape = {
+  agent_id: agentIdSchema,
+  project: z.string().min(1).max(200).describe(P.project),
+  name: z.string().min(1).max(100).describe(P.resource_name),
+};
+
+export const postNoticeShape = {
+  agent_id: agentIdSchema,
+  project: z.string().min(1).max(200).describe(P.project),
+  body: z.string().min(1).max(1000).describe(P.notice_body),
+  ttl_hours: z.number().min(1).max(168).optional().describe(P.notice_ttl),
+};
+
+export const nudgeBlockerShape = {
+  agent_id: agentIdSchema,
+  task_id: z.string().min(1).max(50).describe(P.nudge_my_task),
+  blocker_task_id: z.string().min(1).max(50).describe(P.nudge_blocker_task),
+  note: z.string().max(500).optional().describe(P.nudge_note),
 };
 
 export const heartbeatShape = {
