@@ -12,6 +12,9 @@ export const ERROR_CODES = {
   TASK_NOT_ACTIVE: 'TASK_NOT_ACTIVE',
   TASK_ALREADY_CLAIMED: 'TASK_ALREADY_CLAIMED',
   DEP_CYCLE: 'DEP_CYCLE',
+  NOT_A_BUG: 'NOT_A_BUG',
+  BUG_NOT_ACTIVE: 'BUG_NOT_ACTIVE',
+  BUG_NOT_FIXED: 'BUG_NOT_FIXED',
   EMPTY_SCOPE_ROW: 'EMPTY_SCOPE_ROW',
   INVALID_SCOPE_PATH: 'INVALID_SCOPE_PATH',
 } as const;
@@ -33,6 +36,12 @@ const DEFAULT_HINTS: Record<ErrorCode, string> = {
     'Someone claimed this task first (or it is no longer planned). Call get_task to see its current owner, then coordinate via add_comment.',
   DEP_CYCLE:
     'This dependency would create a cycle (A waiting on B waiting on A). Re-think the split, or drop one direction and record the relationship via add_comment instead.',
+  NOT_A_BUG:
+    "update_bug_state only works on type='bug' tasks. For dev tasks use update_status (done|abandoned).",
+  BUG_NOT_ACTIVE:
+    "fix_ready requires an ACTIVE bug you own. planned -> claim_task first; fixed -> it already awaits verification; closed -> register a new bug.",
+  BUG_NOT_FIXED:
+    "verify_pass/verify_fail require a bug in 'fixed' (awaiting verification). An active bug is not fix-ready yet — the owner calls fix_ready first.",
   EMPTY_SCOPE_ROW: 'Each scope row needs path_glob and/or module.',
   INVALID_SCOPE_PATH:
     "Provide repo-relative posix paths or globs like 'src/auth/**' — no absolute paths, no drive letters, no '..' segments.",

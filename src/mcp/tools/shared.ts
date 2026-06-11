@@ -7,7 +7,7 @@ import type { DepInfo, OverlapReport, ScopeRowInput, Severity, TaskRow } from '.
 import type { Db } from '../../db/connection.js';
 import { insertComment, latestNoticeSeverity, noticeFirstLine, SYSTEM_AUTHOR } from '../../db/repo/comments.js';
 import { depInfos, wouldCreateCycle } from '../../db/repo/deps.js';
-import { distinctOpenProjects, missingTaskIds, openTasksInProject } from '../../db/repo/tasks.js';
+import { distinctOpenProjects, missingTaskIds, overlapPoolTasks } from '../../db/repo/tasks.js';
 import { scopesByTasks } from '../../db/repo/scopes.js';
 import type { BoardDeps } from '../deps.js';
 
@@ -41,11 +41,6 @@ export function validateDeps(db: Db, taskId: string, dependsOn: string[]): void 
   if (cycleVia !== null) {
     throw new BoardError('DEP_CYCLE', `Depending on '${cycleVia}' would create a dependency cycle.`);
   }
-}
-
-/** Deps (by info) that are already closed — allowed but surfaced as a warning. */
-export function closedDeps(db: Db, taskId: string): DepInfo[] {
-  return depInfos(db, taskId).filter((d) => d.status === 'done' || d.status === 'abandoned');
 }
 
 export function ok(structured: Record<string, unknown>): CallToolResult {
@@ -93,8 +88,9 @@ export function buildOverlapReport(
   scope: ScopeRowInput[],
   excludeTaskId: string | undefined,
   now: number,
+  caller?: string,
 ): OverlapReport {
-  const pool = openTasksInProject(deps.db, project, excludeTaskId);
+  const pool = overlapPoolTasks(deps.db, project, excludeTaskId);
   const scopeMap = scopesByTasks(
     deps.db,
     pool.map((t) => t.id),
@@ -109,6 +105,7 @@ export function buildOverlapReport(
     didYouMean: near.length > 0 ? near : null,
     staleTtlHours: deps.staleTtlHours,
     now,
+    caller,
   });
 }
 

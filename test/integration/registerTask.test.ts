@@ -49,6 +49,10 @@ describe('register_task', () => {
     const out = await b.callOk('register_task', registerArgs({ title: 'second auth task' }));
     const warnings = out['warnings'] as Record<string, unknown>;
     expect(warnings['duplicate_task_hint']).toContain(firstId);
+    // Own tasks get sequencing advice — never "negotiate a boundary with yourself".
+    const report = out['overlap_report'] as { counterparts: Array<{ next_step: string }> };
+    expect(report.counterparts[0]!.next_step).toContain('YOUR OWN task');
+    expect(report.counterparts[0]!.next_step).not.toContain('add_comment');
   });
 
   it('warns when no scope is declared', async () => {
@@ -73,7 +77,7 @@ describe('register_task', () => {
     }
   });
 
-  it('exposes all 12 tools and the server instructions', async () => {
+  it('exposes all 13 tools and the server instructions', async () => {
     const b = await makeTestBoard();
     const tools = await b.client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
@@ -86,6 +90,7 @@ describe('register_task', () => {
       'list_tasks',
       'register_task',
       'submit_feedback',
+      'update_bug_state',
       'update_scope',
       'update_status',
       'update_task',

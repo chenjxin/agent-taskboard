@@ -1,7 +1,12 @@
 /** Severity of a scope overlap with a counterpart task. */
 export type Severity = 'HIGH' | 'MEDIUM' | 'UNKNOWN';
 
-export type TaskStatus = 'planned' | 'active' | 'done' | 'abandoned';
+/** 'fixed' = bug awaiting regression verification (bug-type tasks only). */
+export type TaskStatus = 'planned' | 'active' | 'fixed' | 'done' | 'abandoned';
+
+export type TaskType = 'dev' | 'bug';
+
+export type BugSeverity = 'critical' | 'high' | 'medium' | 'low';
 
 export type CommentKind = 'comment' | 'boundary_agreement' | 'overlap_notice' | 'dependency_notice';
 
@@ -31,6 +36,9 @@ export interface TaskRow {
   owner_agent_id: string | null;
   created_by_agent_id: string;
   status: TaskStatus;
+  type: TaskType;
+  /** Bug triage level; meaningful for type='bug'. */
+  severity: BugSeverity | null;
   /** Free-form sprint label agreed by the team, e.g. '2026w24'. */
   iteration: string | null;
   closing_note: string | null;
@@ -38,6 +46,8 @@ export interface TaskRow {
   updated_at: number;
   /** When the task became active (v1 rows: backfilled to created_at). */
   claimed_at: number | null;
+  /** When the fix entered regression verification. NEVER doubles as closed_at. */
+  fixed_at: number | null;
   closed_at: number | null;
   last_heartbeat_at: number;
 }

@@ -57,9 +57,20 @@ describe('update_status', () => {
     });
     expect(notOwner['error_code']).toBe('NOT_TASK_OWNER');
 
-    const noNote = await b.callErr('update_status', { agent_id: 'alice/claude', task_id: id, status: 'done' });
-    expect(noNote['error_code']).toBe('VALIDATION_ERROR');
-    expect(noNote['message']).toContain('closing_note');
+    // closing_note is now required at the SCHEMA level too — the SDK rejects
+    // before the handler (no wasted round-trip); whitespace-only still reaches
+    // the handler's educational VALIDATION_ERROR.
+    const noNote = await b.call('update_status', { agent_id: 'alice/claude', task_id: id, status: 'done' });
+    expect(noNote.isError).toBe(true);
+    expect((noNote.content?.[0] as { text: string }).text).toMatch(/Invalid arguments/);
+    const blankNote = await b.callErr('update_status', {
+      agent_id: 'alice/claude',
+      task_id: id,
+      status: 'done',
+      closing_note: '   ',
+    });
+    expect(blankNote['error_code']).toBe('VALIDATION_ERROR');
+    expect(blankNote['message']).toContain('closing_note');
 
     // 'active' is excluded at the schema level (z.enum) — there is no transition back.
     const badStatus = await b.call('update_status', {

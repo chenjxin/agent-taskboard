@@ -23,8 +23,17 @@ export const registerTaskShape = {
   branch: z.string().max(200).optional().describe(P.branch),
   scope: z.array(scopeRowSchema).max(50).optional().describe(P.scope),
   start_as: z.enum(['active', 'planned', 'backlog']).optional().describe(P.start_as),
+  type: z.enum(['dev', 'bug']).optional().describe(P.task_type),
+  severity: z.enum(['critical', 'high', 'medium', 'low']).optional().describe(P.bug_severity),
   iteration: z.string().max(100).optional().describe(P.iteration),
   depends_on: z.array(z.string().max(50)).max(20).optional().describe(P.depends_on),
+};
+
+export const updateBugStateShape = {
+  agent_id: agentIdSchema,
+  task_id: z.string().min(1).max(50).describe(P.task_id),
+  event: z.enum(['fix_ready', 'verify_pass', 'verify_fail']).describe(P.bug_event),
+  note: z.string().min(1).max(4000).describe(P.bug_note),
 };
 
 export const listTasksShape = {
@@ -35,6 +44,8 @@ export const listTasksShape = {
     .optional()
     .describe(P.status_filter),
   owner_agent_id: z.string().max(100).optional().describe(P.owner_filter),
+  created_by: z.string().max(100).optional().describe(P.created_by_filter),
+  type: z.enum(['dev', 'bug']).optional().describe('Filter by task type.'),
   iteration: z.string().max(100).optional().describe(P.iteration_filter),
 };
 
@@ -55,6 +66,11 @@ export const updateTaskShape = {
   title: z.string().min(1).max(200).optional().describe(P.title),
   description: z.string().max(4000).optional().describe(P.description),
   branch: z.string().max(200).nullable().optional().describe(`${P.branch} Pass null to clear.`),
+  severity: z
+    .enum(['critical', 'high', 'medium', 'low'])
+    .nullable()
+    .optional()
+    .describe(`${P.bug_severity} Pass null to clear.`),
   iteration: z.string().max(100).optional().describe(P.iteration),
   depends_on: z
     .array(z.string().max(50))
@@ -122,7 +138,9 @@ export const updateStatusShape = {
   agent_id: agentIdSchema,
   task_id: z.string().min(1).max(50).describe(P.task_id),
   status: z.enum(['done', 'abandoned']).describe(P.close_status),
-  closing_note: z.string().max(4000).optional().describe(P.closing_note),
+  // Required at the schema level too — omitting it used to burn a round-trip
+  // before the (educational) server-side rejection arrived.
+  closing_note: z.string().min(1).max(4000).describe(P.closing_note),
 };
 
 export const heartbeatShape = {

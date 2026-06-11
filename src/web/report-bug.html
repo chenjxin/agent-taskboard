@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>提交 Bug · Agent Task Board</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #14171a;
+    --panel: #1c2126;
+    --panel-2: #232930;
+    --border: #2e3640;
+    --text: #d8dee5;
+    --dim: #8b95a0;
+    --accent: #58a6ff;
+    --amber-bg: #3c2f12; --amber-fg: #e3b341; --amber-bd: #6b5618;
+    --red-bg: #3a1f1d;   --red-fg: #f0857a;   --red-bd: #6e3631;
+    --green-bg: #1b3022; --green-fg: #6fcf8e; --green-bd: #2e5c3d;
+    --mod-bg: #25223a;   --mod-fg: #b3a6f5;   --mod-bd: #443d6e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      color-scheme: light;
+      --bg: #f4f5f7; --panel: #ffffff; --panel-2: #eef0f3; --border: #d4d9de;
+      --text: #22272c; --dim: #66707a; --accent: #0969da;
+      --amber-bg: #fff3cd; --amber-fg: #7a5d00; --amber-bd: #e3cb6e;
+      --red-bg: #ffe5e2;   --red-fg: #a13327;   --red-bd: #e7a9a1;
+      --green-bg: #dcf2e3; --green-fg: #1a6b38; --green-bd: #a4d4b4;
+      --mod-bg: #e9e5fb;   --mod-fg: #4f3fa8;   --mod-bd: #c4baee;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI",
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px;
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg); z-index: 1;
+  }
+  h1 { font-size: 18px; margin: 0; }
+  .back-link { color: var(--accent); text-decoration: none; font-size: 13px; margin-left: auto; }
+  .back-link:hover { text-decoration: underline; }
+  main { padding: 16px 20px 48px; max-width: 680px; margin: 0 auto; }
+  form {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  label { font-size: 13px; font-weight: 600; }
+  .required::after { content: ' *'; color: var(--red-fg); }
+  .hint { font-size: 12px; color: var(--dim); }
+  input, select, textarea {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font: inherit; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  textarea { min-height: 160px; resize: vertical; }
+  button[type="submit"] {
+    align-self: flex-start; font: inherit; font-weight: 600; cursor: pointer;
+    padding: 7px 18px; border-radius: 6px;
+    color: var(--green-fg); border: 1px solid var(--green-bd); background: var(--green-bg);
+  }
+  button[type="submit"]:disabled { opacity: 0.6; cursor: wait; }
+  #result { border-radius: 6px; padding: 8px 12px; font-size: 13px; overflow-wrap: anywhere; }
+  #result.ok { background: var(--green-bg); color: var(--green-fg); border: 1px solid var(--green-bd); }
+  #result.err { background: var(--red-bg); color: var(--red-fg); border: 1px solid var(--red-bd); }
+</style>
+</head>
+<body>
+<header>
+  <h1>提交 Bug</h1>
+  <a class="back-link" href="/board">← 返回看板</a>
+</header>
+<main>
+<form id="bug-form">
+  <div class="field">
+    <label class="required" for="f-name">你的姓名</label>
+    <input id="f-name" name="name" type="text" required maxlength="50" pattern="[\w.-]+" autocomplete="name">
+    <span class="hint">只填人名，系统会记录为 &lt;姓名&gt;/human</span>
+  </div>
+  <div class="field">
+    <label class="required" for="f-project">项目</label>
+    <input id="f-project" name="project" type="text" required>
+    <span class="hint">仓库名小写，如 reload-front</span>
+  </div>
+  <div class="field">
+    <label class="required" for="f-title">标题</label>
+    <input id="f-title" name="title" type="text" required maxlength="200">
+    <span class="hint">一句话说清现象</span>
+  </div>
+  <div class="field">
+    <label for="f-severity">严重程度</label>
+    <select id="f-severity" name="severity">
+      <option value="critical">critical 阻断</option>
+      <option value="high">high 严重</option>
+      <option value="medium" selected>medium 一般</option>
+      <option value="low">low 轻微</option>
+    </select>
+  </div>
+  <div class="field">
+    <label class="required" for="f-description">复现步骤与现象</label>
+    <textarea id="f-description" name="description" required maxlength="4000"
+      placeholder="环境/步骤/期望/实际"></textarea>
+  </div>
+  <div id="result" hidden></div>
+  <button type="submit" id="f-submit">提交</button>
+</form>
+</main>
+<script>
+'use strict';
+// XSS hard rule: every piece of server data is rendered exclusively through
+// textContent. This file contains zero direct-HTML sinks (inner/outer HTML,
+// adjacent-HTML insertion). Query params are never read or reflected.
+//
+// SUBMISSION CONTRACT: this form MUST be submitted via fetch with a JSON body
+// (Content-Type: application/json) — the server rejects form-encoded bodies.
+// Never convert this to a native form submit; the submit handler below calls
+// event.preventDefault() unconditionally.
+
+const NAME_KEY = 'board-reporter-name';
+
+const $form = document.getElementById('bug-form');
+const $name = document.getElementById('f-name');
+const $project = document.getElementById('f-project');
+const $title = document.getElementById('f-title');
+const $severity = document.getElementById('f-severity');
+const $description = document.getElementById('f-description');
+const $submit = document.getElementById('f-submit');
+const $result = document.getElementById('result');
+
+const remembered = localStorage.getItem(NAME_KEY);
+if (remembered) $name.value = remembered;
+
+function showResult(kind, text) {
+  $result.hidden = false;
+  $result.className = kind; // 'ok' | 'err' — fixed literals only, never raw data
+  $result.textContent = text;
+}
+
+$form.addEventListener('submit', async (event) => {
+  event.preventDefault(); // never a native form submit — see contract comment above
+  $submit.disabled = true;
+  $result.hidden = true;
+  try {
+    const name = $name.value.trim();
+    localStorage.setItem(NAME_KEY, name);
+    const res = await fetch('/api/bugs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        project: $project.value.trim(),
+        title: $title.value.trim(),
+        severity: $severity.value,
+        description: $description.value.trim(),
+      }),
+    });
+    if (res.ok) {
+      let taskId = '';
+      try {
+        const body = await res.json();
+        if (body && typeof body.task_id === 'string') taskId = body.task_id;
+      } catch (_ignored) { /* 2xx without parseable body: still a success */ }
+      showResult('ok', '已提交' + (taskId ? '，bug 编号 ' + taskId : '') + '，可在看板跟踪');
+      $form.reset();
+      $name.value = name; // keep name after clearing the form
+    } else {
+      let msg = 'HTTP ' + res.status;
+      try {
+        const body = await res.json();
+        if (body && typeof body.message === 'string') msg = body.message;
+      } catch (_ignored) { /* non-JSON error body: keep HTTP status */ }
+      showResult('err', '提交失败: ' + msg);
+    }
+  } catch (err) {
+    showResult('err', '提交失败: ' + (err instanceof Error ? err.message : String(err)));
+  } finally {
+    $submit.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

@@ -4,9 +4,9 @@ import type { Db } from '../connection.js';
 export function insertTask(db: Db, task: TaskRow): void {
   db.prepare(
     `INSERT INTO tasks (id, project, title, description, branch, owner_agent_id, created_by_agent_id,
-                        status, iteration, closing_note, created_at, updated_at, claimed_at, closed_at, last_heartbeat_at)
+                        status, type, severity, iteration, closing_note, created_at, updated_at, claimed_at, fixed_at, closed_at, last_heartbeat_at)
      VALUES (@id, @project, @title, @description, @branch, @owner_agent_id, @created_by_agent_id,
-             @status, @iteration, @closing_note, @created_at, @updated_at, @claimed_at, @closed_at, @last_heartbeat_at)`,
+             @status, @type, @severity, @iteration, @closing_note, @created_at, @updated_at, @claimed_at, @fixed_at, @closed_at, @last_heartbeat_at)`,
   ).run(task);
 }
 
@@ -18,9 +18,11 @@ export type StatusFilter = TaskStatus | 'open' | 'all';
 
 export interface ListTasksFilters {
   project?: string | undefined;
-  /** 'open' = planned + active. */
+  /** 'open' = planned + active + fixed (not yet verified/closed). */
   status?: StatusFilter | undefined;
   ownerAgentId?: string | undefined;
+  createdByAgentId?: string | undefined;
+  type?: string | undefined;
   iteration?: string | undefined;
   limit: number;
 }
@@ -34,7 +36,7 @@ export function listTasks(db: Db, filters: ListTasksFilters): TaskRow[] {
   }
   const status = filters.status ?? 'open';
   if (status === 'open') {
-    where.push(`status IN ('planned', 'active')`);
+    where.push(`status IN ('planned', 'active', 'fixed')`);
   } else if (status !== 'all') {
     where.push('status = @status');
     params['status'] = status;
@@ -42,6 +44,14 @@ export function listTasks(db: Db, filters: ListTasksFilters): TaskRow[] {
   if (filters.ownerAgentId) {
     where.push('owner_agent_id = @owner');
     params['owner'] = filters.ownerAgentId;
+  }
+  if (filters.createdByAgentId) {
+    where.push('created_by_agent_id = @createdBy');
+    params['createdBy'] = filters.createdByAgentId;
+  }
+  if (filters.type) {
+    where.push('type = @type');
+    params['type'] = filters.type;
   }
   if (filters.iteration) {
     where.push('iteration = @iteration');
@@ -53,8 +63,12 @@ export function listTasks(db: Db, filters: ListTasksFilters): TaskRow[] {
     .all(params) as TaskRow[];
 }
 
-/** The overlap-counterpart pool: same-project planned+active tasks, excluding the caller's own. */
-export function openTasksInProject(db: Db, project: string, excludeTaskId?: string): TaskRow[] {
+/**
+ * The overlap-counterpart pool: same-project planned+active tasks, excluding
+ * the caller's own. Deliberately NARROWER than the 'open' display filter:
+ * 'fixed' work is finished code awaiting verification, not contested ground.
+ */
+export function overlapPoolTasks(db: Db, project: string, excludeTaskId?: string): TaskRow[] {
   return db
     .prepare(
       `SELECT * FROM tasks WHERE project = ? AND status IN ('planned', 'active') AND id != ? ORDER BY created_at`,
@@ -70,26 +84,63 @@ export function distinctOpenProjects(db: Db): string[] {
   return rows.map((r) => r.project);
 }
 
-/** Recently relevant tasks for the board/standup: open + closed within `closedSinceMs`. */
+/** Recently relevant tasks for the board/standup: open (incl. awaiting verification) + closed within `closedSinceMs`. */
 export function boardTasks(db: Db, closedSinceMs: number, limit: number): TaskRow[] {
   return db
     .prepare(
-      `SELECT * FROM tasks WHERE status IN ('planned', 'active') OR closed_at >= ?
+      `SELECT * FROM tasks WHERE status IN ('planned', 'active', 'fixed') OR closed_at >= ?
        ORDER BY project, created_at LIMIT ?`,
     )
     .all(closedSinceMs, limit) as TaskRow[];
 }
 
+/** Guarded close: only not-yet-closed rows transition. Returns false if a concurrent writer won. */
 export function setStatus(
   db: Db,
   id: string,
   status: 'done' | 'abandoned',
   closingNote: string,
   now: number,
-): void {
-  db.prepare(
-    `UPDATE tasks SET status = ?, closing_note = ?, closed_at = ?, updated_at = ? WHERE id = ?`,
-  ).run(status, closingNote, now, now, id);
+): boolean {
+  const info = db
+    .prepare(
+      `UPDATE tasks SET status = ?, closing_note = ?, closed_at = ?, updated_at = ?
+       WHERE id = ? AND status IN ('planned', 'active', 'fixed')`,
+    )
+    .run(status, closingNote, now, now, id);
+  return info.changes === 1;
+}
+
+/**
+ * Bug verification lifecycle transitions, each guarded in SQL — the web verify
+ * endpoint makes a second writer a real possibility. 'fixed' deliberately does
+ * NOT touch closed_at (standup/board treat closed_at as terminal).
+ */
+export function markBugFixed(db: Db, id: string, now: number): boolean {
+  const info = db
+    .prepare(
+      `UPDATE tasks SET status = 'fixed', fixed_at = ?, updated_at = ?
+       WHERE id = ? AND status = 'active' AND type = 'bug'`,
+    )
+    .run(now, now, id);
+  return info.changes === 1;
+}
+
+/**
+ * verify_fail: back to the fixer (owner unchanged); heartbeat reset so it is
+ * not instantly stale. The cursor lands 1ms BEFORE `now` — the rejection
+ * comment is written at `now` in the same transaction, and the heartbeat
+ * activity query uses strict '>', so an equal timestamp would swallow the very
+ * notification this transition exists to deliver.
+ */
+export function reopenBug(db: Db, id: string, now: number): boolean {
+  const info = db
+    .prepare(
+      `UPDATE tasks SET status = 'active', fixed_at = NULL, last_heartbeat_at = ? - 1, updated_at = ?
+       WHERE id = ? AND status = 'fixed' AND type = 'bug'`,
+    )
+    .run(now, now, id);
+  return info.changes === 1;
 }
 
 /**
@@ -113,12 +164,13 @@ export interface TaskPatch {
   description?: string | undefined;
   branch?: string | null | undefined;
   iteration?: string | null | undefined;
+  severity?: string | null | undefined;
 }
 
 export function patchTask(db: Db, id: string, patch: TaskPatch, now: number): void {
   const sets: string[] = ['updated_at = @now'];
   const params: Record<string, unknown> = { id, now };
-  for (const key of ['title', 'description', 'branch', 'iteration'] as const) {
+  for (const key of ['title', 'description', 'branch', 'iteration', 'severity'] as const) {
     if (patch[key] !== undefined) {
       sets.push(`${key} = @${key}`);
       params[key] = patch[key];

@@ -7,8 +7,11 @@ import { schemaVersion } from '../db/connection.js';
 import { buildMcpServer } from '../mcp/server.js';
 import type { BoardDeps } from '../mcp/deps.js';
 import { buildStandup } from '../mcp/tools/getStandup.js';
+import { BoardError } from '../core/errors.js';
+import type { BugSeverity } from '../core/types.js';
 import { allAgents } from '../db/repo/agents.js';
 import { allFeedback } from '../db/repo/feedback.js';
+import { registerTaskCore, updateBugStateCore } from '../mcp/cores.js';
 import { buildBoardData } from '../web/boardData.js';
 import { bearerAuth, digestEqual } from './auth.js';
 
@@ -27,6 +30,68 @@ export interface AppOptions {
 /** The origin the caller actually used — substituted into the /setup doc (trusted LAN, no proxy). */
 function requestOrigin(req: Request): string {
   return `${req.protocol}://${req.get('host') ?? 'localhost'}`;
+}
+
+const HUMAN_NAME_RE = /^[\w.-]{1,50}$/;
+
+/**
+ * CSRF stance for the human write endpoints: there are NO cookies/sessions
+ * (no ambient credential), and JSON-only requests force a CORS preflight that
+ * fails cross-origin. INVARIANTS that keep this true: never add
+ * express.urlencoded(), and reject non-JSON content types here.
+ */
+const jsonOnly: RequestHandler = (req, res, next) => {
+  if (!req.is('application/json')) {
+    res.status(415).json({
+      error_code: 'UNSUPPORTED_MEDIA_TYPE',
+      message: 'Send application/json.',
+      next_call_hint: 'POST with header Content-Type: application/json and a JSON body.',
+    });
+    return;
+  }
+  next();
+};
+
+/** Tiny per-IP token bucket — the only throttle on the first human write path. */
+function writeLimiter(perMinute: number): RequestHandler {
+  const buckets = new Map<string, { tokens: number; last: number }>();
+  const IDLE_EVICT_MS = 10 * 60_000;
+  return (req, res, next) => {
+    const ip = req.ip ?? 'unknown';
+    const now = Date.now();
+    // Evict idle entries so the map cannot grow with every IP ever seen.
+    if (buckets.size > 512) {
+      for (const [k, v] of buckets) if (now - v.last > IDLE_EVICT_MS) buckets.delete(k);
+    }
+    const bucket = buckets.get(ip) ?? { tokens: perMinute, last: now };
+    bucket.tokens = Math.min(perMinute, bucket.tokens + ((now - bucket.last) / 60_000) * perMinute);
+    bucket.last = now;
+    if (bucket.tokens < 1) {
+      buckets.set(ip, bucket);
+      res.status(429).json({
+        error_code: 'RATE_LIMITED',
+        message: 'Too many writes from this address — wait a minute and retry.',
+        next_call_hint: '',
+      });
+      return;
+    }
+    bucket.tokens -= 1;
+    buckets.set(ip, bucket);
+    next();
+  };
+}
+
+function sendBoardError(res: Response, route: string, e: unknown): void {
+  if (e instanceof BoardError) {
+    res.status(e.error_code === 'TASK_NOT_FOUND' ? 404 : 400).json(e.toPayload());
+    return;
+  }
+  console.error(`[${new Date().toISOString()}] ${route} error:`, e);
+  res.status(500).json({ error_code: 'INTERNAL', message: 'Internal server error', next_call_hint: '' });
+}
+
+function str(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : '';
 }
 
 /** Whitelist: URL name -> path relative to adoptionDir. Nothing else is reachable. */
@@ -161,6 +226,92 @@ export function buildApp(deps: BoardDeps, opts: AppOptions): Express {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.type('text/plain; charset=utf-8');
     res.sendFile(opts.changelogPath);
+  });
+
+  // ---- Human tester channel: the first write endpoints outside /mcp. ------
+  const bugWriteLimiter = writeLimiter(30);
+
+  app.get('/report-bug', auth, (_req, res) => {
+    setHtmlPageHeaders(res);
+    res.sendFile(join(opts.webDir, 'report-bug.html'));
+  });
+
+  // Human bug report. Identity: client sends a bare NAME, the server appends
+  // '/human' — the form can never impersonate a full agent_id like 'alice/claude'.
+  app.post('/api/bugs', auth, bugWriteLimiter, jsonOnly, (req, res) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const name = str(b['name']);
+      if (!HUMAN_NAME_RE.test(name)) {
+        throw new BoardError(
+          'VALIDATION_ERROR',
+          'name must be 1-50 chars of letters/digits/._- (no slash).',
+          "只填人名,系统会记录为 '<姓名>/human'。",
+        );
+      }
+      const severity = b['severity'];
+      if (severity !== undefined && !['critical', 'high', 'medium', 'low'].includes(severity as string)) {
+        throw new BoardError('VALIDATION_ERROR', 'severity must be critical|high|medium|low.');
+      }
+      const project = str(b['project']);
+      const title = str(b['title']);
+      const description = str(b['description']);
+      if (!project || !title || !description) {
+        throw new BoardError('VALIDATION_ERROR', 'project, title and description are all required.');
+      }
+      if (project.length > 200 || title.length > 200 || description.length > 4000) {
+        throw new BoardError('VALIDATION_ERROR', 'Field too long (project/title <= 200, description <= 4000).');
+      }
+      const result = registerTaskCore(deps, {
+        agent_id: `${name}/human`,
+        project,
+        title,
+        description,
+        type: 'bug',
+        start_as: 'backlog',
+        severity: severity as BugSeverity | undefined,
+      });
+      const task = result['task'] as { id: string; project: string };
+      res.status(201).json({ ok: true, task_id: task.id, project: task.project });
+    } catch (e) {
+      sendBoardError(res, req.path, e);
+    }
+  });
+
+  // Human regression verdict on a fixed bug (board buttons).
+  app.post('/api/bugs/:id/verify', auth, bugWriteLimiter, jsonOnly, (req, res) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const name = str(b['name']);
+      if (!HUMAN_NAME_RE.test(name)) {
+        throw new BoardError('VALIDATION_ERROR', 'name must be 1-50 chars of letters/digits/._- (no slash).');
+      }
+      if (typeof b['passed'] !== 'boolean') {
+        throw new BoardError('VALIDATION_ERROR', 'passed must be a boolean.');
+      }
+      const note = str(b['note']);
+      if (!note || note.length > 4000) {
+        throw new BoardError('VALIDATION_ERROR', 'note is required (<= 4000 chars).');
+      }
+      const taskId = typeof req.params['id'] === 'string' ? req.params['id'] : '';
+      if (taskId.length === 0 || taskId.length > 50) {
+        throw new BoardError('VALIDATION_ERROR', 'Invalid bug id in the URL path.');
+      }
+      const result = updateBugStateCore(deps, {
+        actor: `${name}/human`,
+        task_id: taskId,
+        event: b['passed'] ? 'verify_pass' : 'verify_fail',
+        note,
+        via: 'web',
+      });
+      res.json({
+        ok: true,
+        status: (result['task'] as { status: string }).status,
+        message: b['passed'] ? '回归通过,bug 已关闭。' : '已打回修复者,原因将出现在其下次 heartbeat 中。',
+      });
+    } catch (e) {
+      sendBoardError(res, req.path, e);
+    }
   });
 
   // Non-public operator view: all agent feedback + usage (agents seen).

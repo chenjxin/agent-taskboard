@@ -46,7 +46,7 @@ export function registerUpdateScope(server: McpServer, deps: BoardDeps): void {
           upsertAgent(deps.db, args.agent_id, now);
           replaceScopeRows(deps.db, task.id, args.scope);
           touchUpdated(deps.db, task.id, now);
-          report = buildOverlapReport(deps, task.project, args.scope, task.id, now);
+          report = buildOverlapReport(deps, task.project, args.scope, task.id, now, args.agent_id);
           // Planned tasks groom silently; notices fire only for live (active) work.
           if (task.status === 'active') {
             postSymmetricNotices(

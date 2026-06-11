@@ -16,6 +16,7 @@
     --accent: #58a6ff;
     --amber-bg: #3c2f12; --amber-fg: #e3b341; --amber-bd: #6b5618;
     --red-bg: #3a1f1d;   --red-fg: #f0857a;   --red-bd: #6e3631;
+    --orange-bg: #3d2a14; --orange-fg: #f0a35e; --orange-bd: #6e4a23;
     --green-bg: #1b3022; --green-fg: #6fcf8e; --green-bd: #2e5c3d;
     --mod-bg: #25223a;   --mod-fg: #b3a6f5;   --mod-bd: #443d6e;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -27,6 +28,7 @@
       --text: #22272c; --dim: #66707a; --accent: #0969da;
       --amber-bg: #fff3cd; --amber-fg: #7a5d00; --amber-bd: #e3cb6e;
       --red-bg: #ffe5e2;   --red-fg: #a13327;   --red-bd: #e7a9a1;
+      --orange-bg: #ffe8d1; --orange-fg: #8a4600; --orange-bd: #e8b27d;
       --green-bg: #dcf2e3; --green-fg: #1a6b38; --green-bd: #a4d4b4;
       --mod-bg: #e9e5fb;   --mod-fg: #4f3fa8;   --mod-bd: #c4baee;
     }
@@ -81,6 +83,19 @@
   .badge.st-active { color: var(--green-fg); border-color: var(--green-bd); background: var(--green-bg); }
   .badge.st-done { color: var(--accent); }
   .badge.stale { color: var(--amber-fg); border-color: var(--amber-bd); background: var(--amber-bg); cursor: help; }
+  .badge.st-fixed { color: var(--mod-fg); border-color: var(--mod-bd); background: var(--mod-bg); }
+  .badge.bug { color: var(--red-fg); }
+  .badge.sev-critical { color: var(--red-fg); border-color: var(--red-bd); background: var(--red-bg); }
+  .badge.sev-high { color: var(--orange-fg); border-color: var(--orange-bd); background: var(--orange-bg); }
+  .badge.sev-medium { color: var(--amber-fg); border-color: var(--amber-bd); background: var(--amber-bg); }
+  .badge.sev-low { color: var(--dim); }
+  .verify-actions { display: flex; gap: 8px; }
+  .verify-btn {
+    font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer;
+  }
+  .verify-btn.pass { color: var(--green-fg); border-color: var(--green-bd); background: var(--green-bg); }
+  .verify-btn.reject { color: var(--red-fg); border-color: var(--red-bd); background: var(--red-bg); }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; color: var(--dim); }
   .owner-human { font-weight: 700; color: var(--text); }
   .owner-agent { color: var(--dim); }
@@ -170,10 +185,11 @@
 // contains zero direct-HTML sinks (inner/outer HTML, adjacent-HTML insertion).
 
 const POLL_MS = 10000;
-const STATUSES = { planned: 'planned', active: 'active', done: 'done', abandoned: 'abandoned' };
+const STATUSES = { planned: 'planned', active: 'active', fixed: 'fixed', done: 'done', abandoned: 'abandoned' };
 const KINDS = { comment: 'comment', boundary_agreement: 'boundary_agreement', overlap_notice: 'overlap_notice' };
+const SEVERITIES = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' };
 
-const state = { data: null, standup: null, filter: 'all', error: null, standupError: null, fetchedAt: null };
+const state = { data: null, standup: null, filter: 'all', error: null, standupError: null, actionError: null, fetchedAt: null };
 
 const $board = document.getElementById('board');
 const $filter = document.getElementById('project-filter');
@@ -260,6 +276,11 @@ function taskCard(t, now) {
 
   const head = el('div', 'card-head');
   head.appendChild(el('h3', 'task-title', t.title));
+  if (t.type === 'bug') {
+    head.appendChild(el('span', 'badge bug', '🐞 bug'));
+    const sev = SEVERITIES[t.severity]; // whitelist: never build class names from raw data
+    if (sev) head.appendChild(el('span', 'badge sev-' + sev, sev));
+  }
   head.appendChild(el('span', 'badge st-' + status, status)); // label from the same whitelisted value as the class
   card.appendChild(head);
 
@@ -267,7 +288,7 @@ function taskCard(t, now) {
   meta.appendChild(ownerBadge(t.owner_agent_id));
   if (t.branch) meta.appendChild(el('code', 'branch', t.branch));
   if (t.iteration) meta.appendChild(chip('chip iteration', t.iteration));
-  meta.appendChild(timeEl(status === 'planned' ? '提交于' : 'created', t.created_at, now));
+  meta.appendChild(timeEl(status === 'planned' || status === 'fixed' ? '提交于' : 'created', t.created_at, now));
   if (status === 'active') {
     meta.appendChild(timeEl('heartbeat', t.last_heartbeat_at, now));
     if (t.stale) {
@@ -275,6 +296,9 @@ function taskCard(t, now) {
       stale.title = 'advisory only — derived from heartbeat TTL, never auto-closed';
       meta.appendChild(stale);
     }
+  } else if (status === 'fixed') {
+    // awaiting regression verification: no heartbeat/STALE chrome, no closed_at yet
+    meta.appendChild(timeEl('修复于', t.fixed_at, now));
   } else if (t.closed_at != null) {
     meta.appendChild(timeEl('closed', t.closed_at, now));
   }
@@ -312,7 +336,67 @@ function taskCard(t, now) {
   }
 
   if (t.comment_count > 0 && t.recent_comments) card.appendChild(commentsBlock(t, now));
+
+  if (status === 'fixed') {
+    const actions = el('div', 'verify-actions');
+    const pass = el('button', 'verify-btn pass', '回归通过');
+    pass.type = 'button';
+    pass.addEventListener('click', () => { verifyBug(t.id, true); });
+    const reject = el('button', 'verify-btn reject', '打回');
+    reject.type = 'button';
+    reject.addEventListener('click', () => { verifyBug(t.id, false); });
+    actions.appendChild(pass);
+    actions.appendChild(reject);
+    card.appendChild(actions);
+  }
   return card;
+}
+
+const NAME_RE = /^[\w.-]{1,50}$/;
+
+/** Verifier's human name (server appends '/human'); prompted once, then kept in localStorage. */
+function getVerifierName() {
+  let name = localStorage.getItem('board-verifier-name');
+  if (name && NAME_RE.test(name)) return name;
+  name = prompt('你的姓名(只填人名, 如 zhangsan — 系统会记录为 <姓名>/human):');
+  if (name == null) return null; // cancel aborts
+  name = name.trim();
+  if (!NAME_RE.test(name)) {
+    alert('姓名只能包含字母、数字、_ . -, 最长 50 字符');
+    return null;
+  }
+  localStorage.setItem('board-verifier-name', name);
+  return name;
+}
+
+async function verifyBug(taskId, passed) {
+  const name = getVerifierName();
+  if (name == null) return;
+  const note = prompt(passed ? '回归通过备注(必填):' : '打回原因(必填):');
+  if (note == null || note.trim() === '') return; // note is required; cancel/empty aborts
+  try {
+    // Content-Type MUST be application/json — the server rejects anything else.
+    const res = await fetch('/api/bugs/' + encodeURIComponent(taskId) + '/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ name: name, passed: passed, note: note.trim() }),
+    });
+    if (res.ok) {
+      state.actionError = null;
+      await refresh();
+      return;
+    }
+    let msg = 'HTTP ' + res.status;
+    try {
+      const body = await res.json();
+      if (body && typeof body.message === 'string') msg = body.message;
+    } catch (_ignored) { /* non-JSON error body: keep HTTP status */ }
+    state.actionError = '回归操作失败: ' + msg;
+    renderBanner();
+  } catch (err) {
+    state.actionError = '回归操作失败: ' + (err instanceof Error ? err.message : String(err));
+    renderBanner();
+  }
 }
 
 /** '2026w24 3/5 done · avg 12.4h' (avg omitted until a task in the iteration finishes). */
@@ -324,7 +408,9 @@ function iterStatLabel(it) {
 function projectSection(p, now) {
   const section = el('section', 'project');
   const active = p.tasks.filter((t) => t.status === 'active');
+  const fixed = p.tasks.filter((t) => t.status === 'fixed');
   const planned = p.tasks.filter((t) => t.status === 'planned');
+  // 'fixed' deliberately excluded: awaiting regression is not closed.
   const closed = p.tasks.filter((t) => t.status === 'done' || t.status === 'abandoned');
 
   const head = el('div', 'project-head');
@@ -333,6 +419,7 @@ function projectSection(p, now) {
   for (const it of p.iterations || []) {
     const stat = el('span', 'iter-stat', iterStatLabel(it));
     stat.title = 'planned ' + it.planned + ' · active ' + it.active +
+      ' · fixed ' + (it.fixed || 0) +
       ' · done ' + it.done + ' · abandoned ' + it.abandoned;
     head.appendChild(stat);
   }
@@ -342,6 +429,13 @@ function projectSection(p, now) {
   if (active.length === 0) grid.appendChild(el('p', 'empty', 'no active tasks'));
   for (const t of active) grid.appendChild(taskCard(t, now));
   section.appendChild(grid);
+
+  if (fixed.length > 0) {
+    section.appendChild(el('h3', 'group-head', '待回归 (' + fixed.length + ')'));
+    const fixedGrid = el('div', 'grid');
+    for (const t of fixed) fixedGrid.appendChild(taskCard(t, now));
+    section.appendChild(fixedGrid);
+  }
 
   if (planned.length > 0) {
     section.appendChild(el('h3', 'group-head', '待认领 / 计划中 (' + planned.length + ')'));
@@ -366,6 +460,7 @@ const STANDUP_GROUPS = [
   ['abandoned', 'abandoned'],
   ['started', 'started'],
   ['planned_added', 'planned added'],
+  ['awaiting_verification', '待回归'],
   ['blocked', 'blocked'],
   ['stale', 'stale'],
 ];
@@ -382,6 +477,7 @@ function standupProject(p) {
       if (i > 0) line.appendChild(document.createTextNode(' · '));
       const span = el('span', 'standup-task', t.title);
       const info = [t.task_id];
+      if (t.type === 'bug') info.push('bug' + (t.severity ? ' · severity ' + t.severity : ''));
       if (t.owner_agent_id) info.push('owner ' + t.owner_agent_id);
       if (t.iteration) info.push('iteration ' + t.iteration);
       if (t.blocked_by && t.blocked_by.length > 0) info.push('blocked by ' + t.blocked_by.join(', '));
@@ -438,10 +534,15 @@ function renderBoard() {
 }
 
 function renderBanner() {
+  const msgs = [];
   if (state.error) {
+    msgs.push('board fetch failed: ' + state.error +
+      (state.data ? ' — showing last good data from ' + fmtClock(state.fetchedAt) : ''));
+  }
+  if (state.actionError) msgs.push(state.actionError);
+  if (msgs.length > 0) {
     $banner.hidden = false;
-    $banner.textContent = 'board fetch failed: ' + state.error +
-      (state.data ? ' — showing last good data from ' + fmtClock(state.fetchedAt) : '');
+    $banner.textContent = msgs.join(' · ');
   } else {
     $banner.hidden = true;
   }

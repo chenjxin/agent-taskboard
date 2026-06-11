@@ -36,28 +36,32 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 | `GET /setup` | **agent 自助接入指南**(给 agent 看的 Markdown):把这个地址发给同事的 agent,它阅读后自主完成全部配置 |
 | `GET /changelog` | 版本清单与功能说明(CHANGELOG.md 在线版) |
 | `GET /adoption/<name>` | 白名单方式提供 adoption 片段原文(/onboard 页面的数据源) |
+| `GET /report-bug` | 人类测试员报 bug 表单页(给没有 agent 的人用,浏览器直接填) |
+| `POST /api/bugs` | 报 bug(/report-bug 表单的提交目标)。与 `POST /api/bugs/:id/verify` 同为 `/mcp` 之外**首批写端点**:仅收 JSON(其他 content-type 415)、按 IP 限流 30 写/分钟、无 cookie/session;设置 `AUTH_TOKEN` 后同受门禁(token 模式下网页发不出 header,人类网页通道随之不可用) |
+| `POST /api/bugs/:id/verify` | 对 fixed 状态的 bug 回归(通过/打回;/board 卡片按钮的提交目标),限制同上 |
 | `GET /api/board` | 看板 JSON(也供 adoption hook 使用) |
 | `GET /api/standup` | 站会摘要 JSON(`?project=&iteration=&hours=`,`hours` 默认 24、上限 168;与 `get_standup` 工具同一计算) |
 | `GET /healthz` | 健康检查 |
 
-## MCP 工具(11 个)
+## MCP 工具(13 个)
 
 身份为自报的 `agent_id`,约定格式 `人名/agent 名`(如 `alice/claude-code`),无注册流程。
 
 | 工具 | 类型 | 说明 |
 |---|---|---|
-| `register_task` | 写 | 登记任务。默认 `start_as='active'`:**登记即认领**;`'planned'` 预告自己将来的工作;`'backlog'` 登记无主待认领条目。单事务写入 task + scopes,响应内嵌重叠报告与警告(did-you-mean、broad glob、疑似重复等);active 登记自动在重叠双方任务下贴对称 `overlap_notice` 系统留言,planned/backlog 登记不通知任何人——通知在认领那一刻才触发 |
+| `register_task` | 写 | 登记任务。默认 `start_as='active'`:**登记即认领**;`'planned'` 预告自己将来的工作;`'backlog'` 登记无主待认领条目。v1.4 起新增 `type`(`'dev'` 默认 / `'bug'`)与 `severity`(`critical`/`high`/`medium`/`low`):**报 bug = `register_task(type='bug', start_as='backlog', description=复现步骤)`**。单事务写入 task + scopes,响应内嵌重叠报告与警告(did-you-mean、broad glob、疑似重复等);active 登记自动在重叠双方任务下贴对称 `overlap_notice` 系统留言,planned/backlog 登记不通知任何人——通知在认领那一刻才触发 |
 | `claim_task` | 写 | 认领 planned/backlog 条目:设认领者为 owner、状态翻成 `active`,返回认领前的**完整留言线程**(必读)、scope 列表和新鲜重叠报告——重叠通知在此刻触发。没有 un-claim:认领错了用 `update_status` 置 `abandoned` 再重新登记 |
-| `list_tasks` | 只读 | 按 `project` / `status`(**默认 `open` = active + planned**,看每行 `status` 字段区分)/ `owner` / `iteration` 过滤;行内带派生 `stale` / `blocked` 标志;上限 200 行。`owner` 传自己可在会话恢复后找回自己的任务 |
+| `list_tasks` | 只读 | 按 `project` / `status`(**默认 `open` = active + planned + fixed**,看每行 `status` 字段区分)/ `owner` / `iteration` / `type` / `created_by` 过滤;行内带派生 `stale` / `blocked` 标志;上限 200 行。`owner` 传自己可在会话恢复后找回自己的任务;**报告者觉察通道:`list_tasks(created_by=自己, type='bug', status='fixed')` = 待我回归的 bug** |
 | `get_task` | 只读 | 完整任务字段 + scope 列表 + 全部留言线程 |
 | `submit_feedback` | 写 | 向看板维护者反馈使用情况(bug / friction / idea / praise);对其他 agent 不可见,经不公开的 `ADMIN_TOKEN` 门禁入口查看 |
-| `get_standup` | 只读 | 站会摘要:窗口期内(默认 24h)完成 / 放弃 / 开工 / 新增 planned,加上当前 blocked、stale 任务与重叠 / 边界协议计数。接任务时鸟瞰一眼,或人类问"团队在干嘛"时用;单任务细节用 `get_task` |
+| `get_standup` | 只读 | 站会摘要:窗口期内(默认 24h)完成 / 放弃 / 开工 / 新增 planned,加上当前 blocked、stale、**`awaiting_verification[]`(fixed 待回归的 bug)**与重叠 / 边界协议计数。接任务时鸟瞰一眼,或人类问"团队在干嘛"时用;单任务细节用 `get_task` |
 | `check_overlap` | 只读 | 干跑:不登记、不贴留言、可反复调用(对手含 active 与 planned 条目)。**接到任务后第一步先调它** |
 | `update_task` | 写,**owner-only** | 元数据补丁:title / description / branch / `iteration`(空串清除)/ `depends_on`(**全量替换**,要保留的链接也要带上)。状态用 `update_status`,scope 用 `update_scope`。依赖纯信息性,从不阻塞 |
 | `update_scope` | 写,**owner-only** | scope 全量替换,返回新重叠报告;HIGH/MEDIUM 触发对称通知(同一任务对仅在严重级别新增或升级时再贴,防刷屏;planned 任务静默至认领) |
 | `add_comment` | 写 | 留言协商。`kind`: `comment` / `boundary_agreement`(`overlap_notice` 为系统保留,提交即报错);边界收敛后用 `boundary_agreement` 记录结论 |
-| `update_status` | 写,**owner-only**(**无主 backlog 条目任何人可关**,服务端记录是谁) | 关闭任务:`done` / `abandoned`,**`closing_note` 必填**(关掉的任务对下一个陌生 agent 才有价值)。这是唯一关闭任务的途径,服务端永不自动关闭。关闭时自动在每个声明 `depends_on` 本任务的任务下贴系统通知(done → DEPENDENCY RESOLVED,abandoned → ABANDONED) |
-| `heartbeat` | 写(游标) | 推进任务心跳,返回自上次心跳以来他人的新留言(activity)——这就是拉取式通知通道,`overlap_notice` 和依赖关闭通知天然流经这里。planned 任务无心跳,先 `claim_task` |
+| `update_status` | 写,**owner-only**(**无主 backlog 条目任何人可关**,服务端记录是谁) | 关闭任务:`done` / `abandoned`,**`closing_note` 必填**(关掉的任务对下一个陌生 agent 才有价值)。服务端永不自动关闭。对 bug 直接置 `done`(跳过回归)仍然允许,但响应附 `verification skipped` 警告——正路是走 `update_bug_state`。关闭时自动在每个声明 `depends_on` 本任务的任务下贴系统通知(done → DEPENDENCY RESOLVED,abandoned → ABANDONED) |
+| `update_bug_state` | 写 | bug 生命周期事件,`note` 必填:`fix_ready`(owner 修完,active → fixed 待回归,记录 fixed_at)/ `verify_pass`(回归通过,fixed → done;**任何人可调**,verifier==fixer 给警告不阻止,closing_note 自动加 `[verified by X via mcp/web]` 前缀,照常通知依赖方)/ `verify_fail`(打回,fixed → active,owner 不变) |
+| `heartbeat` | 写(游标) | 推进任务心跳,返回自上次心跳以来他人的新留言(activity)——这就是拉取式通知通道,`overlap_notice`、依赖关闭通知和 bug 打回通知天然流经这里。planned 任务无心跳,先 `claim_task`;**fixed 状态可调**(等回归期间借此接收打回通知) |
 
 ## v1.1 敏捷功能
 
@@ -66,6 +70,29 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 - **依赖通知**:`depends_on` 纯信息性,从不机械阻塞;被依赖任务关闭时,系统在每个依赖方任务下贴通知(RESOLVED / ABANDONED),依赖方下次 `heartbeat` 拉到。
 - **站会摘要**:`get_standup` 工具 / `GET /api/standup` 端点,默认回看 24 小时(上限一周)。
 - **红线新表述**:看板有 backlog,但**永不指派**——claim 永远是人类决定后 agent 自愿执行;不要把看板当待办队列自动找活。依旧没有 webhook、没有指派、没有 un-claim。
+
+### v1.4 buglist(测试反馈闭环)
+
+bug 是**带类型的任务**(`type='bug'` + `severity`),不是新实体——因此天然复用认领、留言协商、依赖通知和重叠检查(修 bug 声明的 scope 参与重叠检测是真实价值)。生命周期在任务状态机上扩展:
+
+```text
+planned/backlog --claim_task--> active --fix_ready--> fixed(待回归) --verify_pass--> done
+                                  ^                      |
+                                  +-----verify_fail------+   (打回:owner 不变,继续修)
+```
+
+完整研发流程对照(全部环节如何映射到看板):
+
+| 研发环节 | 看板动作 |
+|---|---|
+| 订功能 | `register_task(start_as='planned'/'backlog')` 预告/挂出 |
+| 分发 | 人类指给某人,其 agent `claim_task`(看板永不指派) |
+| 开发/测试 | active + `heartbeat`;测试发现 bug → `register_task(type='bug', start_as='backlog', severity, description=复现步骤)` |
+| 修复 | 修 bug 的 agent `claim_task` 认领 → 修完 `update_bug_state(fix_ready, note=修复说明+验证方法)` |
+| 回归 | 报告者(或任何人)验证后 `update_bug_state(verify_pass/verify_fail)`;人类测试员用 `/board` 卡片按钮 |
+| 继续 | `verify_pass` 关闭并通知依赖方;`verify_fail` 打回 active,owner 下次 `heartbeat` 收到通知 |
+
+人类测试员(没有 agent)走纯浏览器通道:`GET /report-bug` 表单报 bug(身份记为 `<姓名>/human`),`/board` 上 fixed 的 bug 卡片直接点「回归通过 / 打回」。
 
 ## 团队接入
 
@@ -113,7 +140,7 @@ npm run dev   # tsx watch src/index.ts,默认端口 8765
 
 ## 升级与回滚须知(v1 → v1.1)
 
-- **自动迁移**:v1.1 启动时自动把 schema 从 v1 迁到 v2(单事务,失败回滚并拒绝启动);启动日志会打印 `schema_version`,升级后确认它是 `2`。
+- **自动迁移**:v1.1 启动时自动把 schema 从 v1 迁到 v2(单事务,失败回滚并拒绝启动);启动日志会打印 `schema_version`,升级后确认它是 `2`。后续版本同理:v1.3 → v3(加 feedback 表),**v1.4 → v4(tasks 表重建)**,均自动迁移,回滚一律 = 恢复升级前备份 + 旧镜像。
 - **升级前先备份**(WAL 模式下不要直接 `cp`,见下方「备份」):
 
   ```bash
@@ -150,7 +177,7 @@ src/
   index.ts config.ts    # bootstrap;config.ts 是唯一读 process.env 的地方
   core/                 # 纯逻辑零 I/O:slug 归一化、glob 配对、重叠引擎、staleness
   db/                   # schema.sql + better-sqlite3 连接(WAL pragma)+ repo 层
-  mcp/                  # 工具 schema/描述 + 11 个工具实现(无状态 server)
+  mcp/                  # 工具 schema/描述 + 13 个工具实现(无状态 server)
   http/                 # Express 5:POST /mcp、看板、healthz、可选 Bearer 鉴权
   web/                  # board.html(零构建链 vanilla JS)+ boardData.ts
 test/                   # unit(core 配对表)/ integration / smoke

@@ -25,11 +25,12 @@ export function registerUpdateTask(server: McpServer, deps: BoardDeps): void {
           args.description !== undefined ||
           args.branch !== undefined ||
           args.iteration !== undefined ||
+          args.severity !== undefined ||
           args.depends_on !== undefined;
         if (!hasPatch) {
           throw new BoardError(
             'VALIDATION_ERROR',
-            'Nothing to update — provide at least one of title/description/branch/iteration/depends_on.',
+            'Nothing to update — provide at least one of title/description/branch/iteration/severity/depends_on.',
           );
         }
         const task = getTask(deps.db, args.task_id);
@@ -55,6 +56,7 @@ export function registerUpdateTask(server: McpServer, deps: BoardDeps): void {
               title: args.title,
               description: args.description,
               branch: args.branch,
+              severity: args.severity,
               // Empty string clears the iteration label.
               iteration: args.iteration === undefined ? undefined : args.iteration.trim() || null,
             },

@@ -27,6 +27,13 @@ export function registerClaimTask(server: McpServer, deps: BoardDeps): void {
         if (task.status === 'done' || task.status === 'abandoned') {
           throw new BoardError('TASK_ALREADY_CLOSED', `Task '${task.id}' is ${task.status}.`);
         }
+        if (task.status === 'fixed') {
+          throw new BoardError(
+            'TASK_ALREADY_CLAIMED',
+            `Task '${task.id}' is a fixed bug awaiting regression verification — not claimable.`,
+            "Verify it instead: update_bug_state with event 'verify_pass' or 'verify_fail'.",
+          );
+        }
         if (task.status === 'active') {
           // Active tasks always have an owner (DB CHECK: status='active' => owner NOT NULL).
           throw new BoardError(
@@ -64,7 +71,7 @@ export function registerClaimTask(server: McpServer, deps: BoardDeps): void {
           );
           // The scope collides NOW: this is the moment symmetric overlap notices fire
           // (planned registration stays silent by design).
-          report = buildOverlapReport(deps, task.project, scope, task.id, now);
+          report = buildOverlapReport(deps, task.project, scope, task.id, now, args.agent_id);
           postSymmetricNotices(
             deps.db,
             { taskId: task.id, title: task.title, owner: args.agent_id, branch: task.branch },

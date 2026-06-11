@@ -50,6 +50,8 @@ export interface ComputeOverlapArgs {
   didYouMean: string[] | null;
   staleTtlHours: number;
   now: number;
+  /** The agent asking — its OWN other tasks get sequencing advice, not "negotiate with yourself". */
+  caller?: string | undefined;
 }
 
 interface PairEvaluation {
@@ -85,9 +87,21 @@ function broadGlobsOf(scope: ScopeRowInput[]): string[] {
   return scope.filter((r) => r.path_glob && isBroadGlob(r.path_glob)).map((r) => r.path_glob as string);
 }
 
-function nextStepFor(c: CounterpartInput, severity: Severity, stale: boolean, hoursAgo: number): string {
+function nextStepFor(
+  c: CounterpartInput,
+  severity: Severity,
+  stale: boolean,
+  hoursAgo: number,
+  caller: string | undefined,
+): string {
   const owner = c.task.owner_agent_id ?? 'unclaimed';
   const human = c.task.owner_agent_id?.split('/')[0];
+  if (caller !== undefined && c.task.owner_agent_id === caller) {
+    return (
+      `'${c.task.title}' (${c.task.id}) is YOUR OWN task — no negotiation needed, just sequence the work ` +
+      `(and make sure this registration is not an accidental duplicate of it).`
+    );
+  }
   let step: string;
   switch (severity) {
     case 'HIGH':
@@ -120,7 +134,7 @@ function nextStepFor(c: CounterpartInput, severity: Severity, stale: boolean, ho
 }
 
 export function computeOverlap(args: ComputeOverlapArgs): OverlapReport {
-  const { project, myScope, counterparts, didYouMean, staleTtlHours, now } = args;
+  const { project, myScope, counterparts, didYouMean, staleTtlHours, now, caller } = args;
 
   const rows: OverlapCounterpart[] = [];
   let lowContactCount = 0;
@@ -147,7 +161,7 @@ export function computeOverlap(args: ComputeOverlapArgs): OverlapReport {
       severity: evaluated.severity,
       matches: evaluated.matches,
       counterpart_broad_globs: broadGlobsOf(c.scopeRows),
-      next_step: nextStepFor(c, evaluated.severity, stale, hoursAgo),
+      next_step: nextStepFor(c, evaluated.severity, stale, hoursAgo, caller),
     });
   }
 

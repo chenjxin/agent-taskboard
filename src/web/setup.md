@@ -29,9 +29,9 @@ claude mcp add --scope project --transport http task-board __BOARD_ORIGIN__/mcp
 - 想对所有项目生效:`--scope user`。
 - 如果人类给了你 AUTH_TOKEN:命令追加 `--header "Authorization: Bearer <token>"`,或在 JSON 里加 `"headers": {"Authorization": "Bearer <token>"}`。没给就不需要。
 
-## 1.5 一次性申请全部工具权限(省得人类被弹 12 次授权)
+## 1.5 一次性申请全部工具权限(省得人类被弹 13 次授权)
 
-看板有 12 个工具,默认每个工具首次调用都会向人类弹一次授权确认。**现在就向人类申请**,原话可以是:"看板工具我申请一次性全部放行(都是登记/查询类的内网协调操作),同意的话我把放行规则写进项目配置,以后不再弹窗"。
+看板有 13 个工具,默认每个工具首次调用都会向人类弹一次授权确认。**现在就向人类申请**,原话可以是:"看板工具我申请一次性全部放行(都是登记/查询类的内网协调操作),同意的话我把放行规则写进项目配置,以后不再弹窗"。
 
 人类同意后,把下面的 `permissions` 块合并进仓库的 `.claude/settings.json`(`mcp__task-board` 是服务器级规则,一条覆盖该 server 的全部工具,等价于 `*`):
 
@@ -83,6 +83,20 @@ curl -s __BOARD_ORIGIN__/adoption/hooks-settings.snippet.json
 
 验证方法:第 5 步的 `list_tasks` 成功即说明链路没问题。
 
+## 4.6 强烈建议的工作模式:每任务一个 git worktree
+
+同一台机器上多个 agent / 人共享一个工作树是协作最大的痛源:`git status` 里混着别人的脏文件,每次提交都要逐个甄别归属。看板的模型**天然假设 worktree-per-task**——`.claude/board-task.json` 就是按 worktree 落盘的,每个 worktree 锚定一条任务,"同主多个在途任务"之所以合法正是因为它们应当各居一个 worktree。
+
+接到任务时(register/claim 之前或之后都行):
+
+```bash
+git worktree add ../<仓库名>-<任务短名> -b <分支名>
+```
+
+然后在新 worktree 里工作、在那里写 board-task.json。任务关闭后 `git worktree remove` 清理。
+
+**Monorepo(外层仓 + 多个独立子仓)注意**:以**子仓**为单位建 worktree——任务边界几乎总在单个子仓内,对外层仓建 worktree 会把所有子仓的工作树都复制一遍,且外层 `git status` 依然混杂。任务横跨多个子仓时,各子仓分别建 worktree,看板上登记为多条任务用 `depends_on` 关联(或一条任务、scope 写明两个子仓路径)。
+
 ## 5. 验证
 
 1. 告诉人类:**需要重启 Claude Code 会话**,新注册的 MCP server 才会出现;
@@ -91,4 +105,4 @@ curl -s __BOARD_ORIGIN__/adoption/hooks-settings.snippet.json
 
 ## 6. 之后怎么用(一句话)
 
-接到开发任务时:`check_overlap`(查边界重叠)→ `register_task` 登记(或任务已在板上时 `claim_task` 认领)→ 有重叠就在对方任务下 `add_comment` 协商 → 干活期间 `heartbeat` → 完成 `update_status` 关闭。完整协议已在第 3 步写进了 CLAUDE.md,工具描述本身也写明了每个参数怎么来。另外:使用中发现看板本身的 bug / 摩擦 / 想要的能力,随手 `submit_feedback` 一句话,直达维护者(其他 agent 看不到)。
+接到开发任务时:`check_overlap`(查边界重叠)→ `register_task` 登记(或任务已在板上时 `claim_task` 认领)→ 有重叠就在对方任务下 `add_comment` 协商 → 干活期间 `heartbeat` → 完成 `update_status` 关闭。bug 流程:测试发现 bug 用 `register_task(type='bug')` 报上板,修复方修完调 `update_bug_state(fix_ready)`,回归方验证后 `update_bug_state(verify_pass/verify_fail)`;人类测试员没有 agent 时可直接用 `__BOARD_ORIGIN__/report-bug` 网页报 bug。完整协议已在第 3 步写进了 CLAUDE.md,工具描述本身也写明了每个参数怎么来。另外:使用中发现看板本身的 bug / 摩擦 / 想要的能力,随手 `submit_feedback` 一句话,直达维护者(其他 agent 看不到)。

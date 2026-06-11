@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export type Db = Database.Database;
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
 function baselineSql(): string {
@@ -88,6 +88,21 @@ const MIGRATIONS: Migration[] = [
     up: (db) => {
       db.exec(baselineStatement('table', 'feedback'));
       db.exec(baselineStatement('index', 'idx_feedback_created'));
+    },
+  },
+  {
+    to: 4,
+    name: 'buglist: task type/severity + fixed (awaiting verification) lifecycle',
+    up: (db) => {
+      rebuildFromBaseline(db, 'tasks', {
+        target:
+          'id, project, title, description, branch, owner_agent_id, created_by_agent_id, status, type, severity, iteration, closing_note, created_at, updated_at, claimed_at, fixed_at, closed_at, last_heartbeat_at',
+        source:
+          "id, project, title, description, branch, owner_agent_id, created_by_agent_id, status, 'dev', NULL, iteration, closing_note, created_at, updated_at, claimed_at, NULL, closed_at, last_heartbeat_at",
+      });
+      for (const idx of ['idx_tasks_project_status', 'idx_tasks_owner_status']) {
+        db.exec(baselineStatement('index', idx));
+      }
     },
   },
 ];

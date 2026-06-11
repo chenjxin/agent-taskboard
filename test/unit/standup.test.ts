@@ -15,6 +15,9 @@ function task(id: string, overrides: Partial<TaskRow> = {}): TaskRow {
     owner_agent_id: 'alice/claude',
     created_by_agent_id: 'alice/claude',
     status: 'active',
+    type: 'dev',
+    severity: null,
+    fixed_at: null,
     iteration: null,
     closing_note: null,
     created_at: NOW - 2 * H,
@@ -91,6 +94,29 @@ describe('computeStandup', () => {
     expect(p.stale.map((r) => r.task_id)).toEqual(['t_sleepy']);
   });
 
+  it('iteration filter adds the NOW-fact stock (week plans stay visible all week)', () => {
+    const report = run(
+      [
+        // Registered far outside the window — invisible to window buckets, but still open stock.
+        task('t_plan', { status: 'planned', claimed_at: null, created_at: NOW - 100 * H, iteration: '2026w24' }),
+        task('t_doing', { claimed_at: NOW - 100 * H, iteration: '2026w24' }),
+        task('t_wait', { status: 'fixed', type: 'bug', claimed_at: NOW - 100 * H, fixed_at: NOW - 50 * H, iteration: '2026w24' }),
+        task('t_done', { status: 'done', closed_at: NOW - 50 * H, claimed_at: NOW - 100 * H, iteration: '2026w24' }),
+      ],
+      { iteration: '2026w24' },
+    );
+    const stock = report.iteration_stock!;
+    expect(stock.iteration).toBe('2026w24');
+    expect(stock.planned.map((r) => r.task_id)).toEqual(['t_plan']);
+    expect(stock.active.map((r) => r.task_id)).toEqual(['t_doing']);
+    expect(stock.fixed.map((r) => r.task_id)).toEqual(['t_wait']);
+    expect(stock.planned[0]!.project).toBe('proj');
+  });
+
+  it('iteration_stock is null without an iteration filter', () => {
+    expect(run([task('t_a')]).iteration_stock).toBeNull();
+  });
+
   it('filters by project and iteration; counts notices per project', () => {
     const report = run(
       [
@@ -117,13 +143,14 @@ describe('computeStandup', () => {
 });
 
 describe('blockingDeps truth table', () => {
-  it('planned/active block; done/abandoned do not', () => {
+  it('planned/active/fixed block (unverified != resolved); done/abandoned do not', () => {
     const deps: DepInfo[] = [
       { task_id: 'a', title: '', status: 'planned' },
       { task_id: 'b', title: '', status: 'active' },
+      { task_id: 'e', title: '', status: 'fixed' },
       { task_id: 'c', title: '', status: 'done' },
       { task_id: 'd', title: '', status: 'abandoned' },
     ];
-    expect(blockingDeps(deps).map((d) => d.task_id)).toEqual(['a', 'b']);
+    expect(blockingDeps(deps).map((d) => d.task_id)).toEqual(['a', 'b', 'e']);
   });
 });

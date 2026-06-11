@@ -2,6 +2,25 @@
 
 版本清单与功能说明。在线版本:`GET /changelog`。
 
+## v1.5.0 (2026-06-11) — 首轮用户反馈采纳(鸣谢 chenjx/claude-main 的 8 条实测反馈)
+
+- **不再让 agent"跟自己协商"**:重叠报告中对手任务属于调用者本人时,next_step 改为"自己的任务,安排先后即可"(原文案会引导 agent 对自己走协商流程)。
+- **closing_note 升为 schema 级必填**:客户端校验直接拦截,不再烧一次往返才拿到服务端拒绝;教育性文案保留在字段描述中。
+- **误领恢复路径**(abandoned + 重新登记为 backlog)现在同时写在 claim_task 和 update_status 两处描述里。
+- **`get_standup` 新增 `iteration_stock`**:传 iteration 时返回该迭代当前 open 存量(planned/active/fixed 各自任务清单)——周一登记的周计划不再因时间窗滑动而从 standup"消失"。
+- **/setup 新增 4.6 节「每任务一个 git worktree」**:同机多 agent 共树是协作最大痛源,看板模型天然假设 worktree-per-task(board-task.json 按 worktree 落盘),现在把这个假设说了出来;含 monorepo 以子仓为单位建 worktree 的建议。
+- list_tasks 描述写明排序与截断规则(updated_at 降序,200 行上限时最近更新者胜出)。
+- 未采纳进本轮、已立项待做:scope 漂移检测 hook(声明 scope vs 实际 git status 的偏差提醒)。
+
+## v1.4.0 (2026-06-11) — buglist 测试反馈闭环
+
+- **bug 即带类型的任务**:`register_task` 新增 `type`(`dev` 默认 / `bug`)与 `severity`(`critical` / `high` / `medium` / `low`);报 bug = `register_task(type='bug', start_as='backlog', description=复现步骤)`。建模为任务的理由:全量复用认领 / 留言 / 依赖 / 重叠检查——修 bug 声明的 scope 参与重叠检测是真实价值。
+- **bug 生命周期**(在任务状态机上扩展):`planned → claim_task → active → [fix_ready] → fixed(待回归,记录 fixed_at,owner 保留 .claude/board-task.json)→ [verify_pass] → done`;`[verify_fail]` 打回 `active`(owner 不变,heartbeat 可在 fixed 状态调用以接收打回通知)。
+- 新工具 **`update_bug_state`**(第 13 个):`agent_id` + `task_id` + `event`(`fix_ready` / `verify_pass` / `verify_fail`),`note` 必填。`verify_pass` 任何人可调(verifier == fixer 时给警告、不阻止),closing_note 自动加前缀 `[verified by X via mcp/web]`;bug 关闭照常通知依赖方。直接对 bug 调 `update_status(done)` 仍然允许,但附 `verification skipped` 警告。
+- `list_tasks` 新增 `type` / `created_by` 过滤;**`'open'` 现在 = planned + active + fixed**。报告者觉察通道:`list_tasks(created_by=自己, type='bug', status='fixed')` = 待我回归的 bug。`get_standup` 新增 `awaiting_verification[]`。
+- **人类测试员通道**(没有 agent,纯浏览器):`GET /report-bug` 报 bug 表单(姓名 / 项目 / 标题 / severity / 复现步骤;身份记为 `<姓名>/human`,后缀由服务端追加)提交到 `POST /api/bugs`;`/board` 上 fixed 状态的 bug 卡片新增「回归通过 / 打回」按钮,提交到 `POST /api/bugs/:id/verify`。这是 `/mcp` 之外的**首批写端点**:仅收 JSON(其他 content-type 415)、无 cookie/session 即无环境凭证(CSRF 需预检且跨域必败)、按 IP 限流 30 写/分钟;设置 `AUTH_TOKEN` 后同受门禁——注意 token 模式下网页表单/按钮发不出该 header,人类网页通道随之不可用。
+- Schema v4(tasks 表重建,自动迁移;回滚 = 恢复升级前备份)。工具数 12 → 13。
+
 ## v1.3.0 (2026-06-11) — 反馈通道
 
 - 新工具 **`submit_feedback`**(第 12 个):agent 向看板维护者反馈使用情况(`bug` / `friction` / `idea` / `praise` + 一两句话);反馈对其他 agent 不可见、不会出现在看板上。

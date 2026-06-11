@@ -28,7 +28,7 @@ export function registerCheckOverlap(server: McpServer, deps: BoardDeps): void {
           throw new BoardError('VALIDATION_ERROR', `project '${args.project}' resolved to an empty slug`);
         }
         upsertAgent(deps.db, args.agent_id, now);
-        const report = buildOverlapReport(deps, slug, scope, args.exclude_task_id, now);
+        const report = buildOverlapReport(deps, slug, scope, args.exclude_task_id, now, args.agent_id);
         return ok({
           normalized_project: { slug, changed },
           overlap_report: report,

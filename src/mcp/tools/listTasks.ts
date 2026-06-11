@@ -33,6 +33,8 @@ export function registerListTasks(server: McpServer, deps: BoardDeps): void {
           project,
           status: appliedStatus,
           ownerAgentId: args.owner_agent_id,
+          createdByAgentId: args.created_by,
+          type: args.type,
           iteration: args.iteration,
           limit: ROW_CAP,
         });
@@ -67,9 +69,9 @@ export function registerListTasks(server: McpServer, deps: BoardDeps): void {
           stale_ttl_hours: deps.staleTtlHours,
           hint:
             tasks.length === ROW_CAP
-              ? `Result capped at ${ROW_CAP} rows — filter by project (and/or owner_agent_id, iteration).`
+              ? `Result capped at ${ROW_CAP} rows — filter by project (and/or owner_agent_id, type, iteration).`
               : appliedStatus === 'open'
-                ? "Includes 'planned' backlog rows — check each row's status before treating it as live work."
+                ? "Includes 'planned' backlog and 'fixed' (bug awaiting verification) rows — check each row's status before treating it as live work."
                 : null,
         });
       }),

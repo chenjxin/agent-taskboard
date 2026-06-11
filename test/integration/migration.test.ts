@@ -102,7 +102,7 @@ describe('v1 -> v2 migration', () => {
 
     const db = openDb(path); // runs the migration
     expect(db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get()).toEqual({
-      value: '3',
+      value: '4',
     });
 
     // Rows preserved, new columns backfilled.
@@ -112,6 +112,9 @@ describe('v1 -> v2 migration', () => {
     expect(tA['claimed_at']).toBe(1000); // backfill = created_at (v1: register == claim)
     expect(tA['iteration']).toBeNull();
     expect(tA['status']).toBe('active');
+    expect(tA['type']).toBe('dev'); // v4 backfill
+    expect(tA['severity']).toBeNull();
+    expect(tA['fixed_at']).toBeNull();
 
     // Comment AUTOINCREMENT ids preserved (thread ordering keys).
     const ids = db.prepare(`SELECT id FROM comments ORDER BY created_at, id`).all() as Array<{ id: number }>;
@@ -129,6 +132,15 @@ describe('v1 -> v2 migration', () => {
       `INSERT INTO comments (task_id, author_agent_id, kind, body, created_at)
        VALUES ('t_ccc', 'system', 'dependency_notice', 'DEPENDENCY RESOLVED task:t_aaa', 3100)`,
     ).run();
+    // a dev-type task can never be 'fixed' (bug-only lifecycle CHECK).
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO tasks (id, project, title, owner_agent_id, created_by_agent_id, status, type, created_at, updated_at, last_heartbeat_at)
+           VALUES ('t_eee', 'proj', 'bad fixed', 'alice/claude', 'alice/claude', 'fixed', 'dev', 1, 1, 1)`,
+        )
+        .run(),
+    ).toThrow(/CHECK/);
     // active without owner violates the new invariant CHECK.
     expect(() =>
       db
@@ -175,7 +187,7 @@ describe('v1 -> v2 migration', () => {
 
     const db = openDb(path); // retry succeeds
     expect(db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get()).toEqual({
-      value: '3',
+      value: '4',
     });
     db.close();
   });

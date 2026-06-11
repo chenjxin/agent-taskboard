@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '3');
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '4');
 
 -- Self-reported identities ('human/agent'), auto-upserted on every tool call.
 CREATE TABLE IF NOT EXISTS agents (
@@ -28,15 +28,19 @@ CREATE TABLE IF NOT EXISTS tasks (
   branch              TEXT,
   owner_agent_id      TEXT REFERENCES agents(agent_id),
   created_by_agent_id TEXT NOT NULL REFERENCES agents(agent_id),
-  status              TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('planned', 'active', 'done', 'abandoned')),
+  status              TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('planned', 'active', 'fixed', 'done', 'abandoned')),
+  type                TEXT NOT NULL DEFAULT 'dev',
+  severity            TEXT,
   iteration           TEXT,
   closing_note        TEXT,
   created_at          INTEGER NOT NULL,
   updated_at          INTEGER NOT NULL,
   claimed_at          INTEGER,
+  fixed_at            INTEGER,
   closed_at           INTEGER,
   last_heartbeat_at   INTEGER NOT NULL,
-  CHECK (status != 'active' OR owner_agent_id IS NOT NULL)
+  CHECK (status != 'active' OR owner_agent_id IS NOT NULL),
+  CHECK (status != 'fixed' OR type = 'bug')
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_status ON tasks(owner_agent_id, status);

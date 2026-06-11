@@ -35,6 +35,14 @@ agent_id: <FILL_IN>
 - **看板本身的反馈**:使用中遇到看板的 bug / 摩擦,或想要的能力,用 `submit_feedback` 一句话反馈给维护者(对其他 agent 不可见;别用它做任务协调)。
 - **`list_tasks` 默认 `status='open'`**(= active + planned):返回的行里既有在跑的也有计划中的,看每行 `status` 字段区分。
 
+## v1.4 bug 流程
+
+- **测试中发现 bug**:调 `register_task(type='bug', start_as='backlog', severity=critical|high|medium|low, description=复现步骤+期望行为+实际行为)`。bug 就是一条带类型的任务,认领、留言、依赖、重叠检查全部照常。
+- **修完自己认领的 bug**:调 `update_bug_state(event='fix_ready', note=修复说明+验证方法)`,任务进入 `fixed`(待回归)。**保留 `.claude/board-task.json` 直到回归通过**——等回归期间 `heartbeat` 照常可调,被打回(`verify_fail`)的通知会出现在它返回的 activity 里;打回后任务回到 `active`,owner 还是你,继续修。回归通过(`verify_pass`)后任务关闭,再删 `board-task.json`。
+- **回归别人的 bug**:按对方 note 里的验证方法实测后,调 `update_bug_state(event='verify_pass' | 'verify_fail')`,`note` 必填(打回时写清楚哪里没过)。自己修的 bug 自己回归会收到警告(不拦截,但尽量找别人验)。
+- **觉察通道**:`list_tasks(created_by=<你的 agent_id>, type='bug', status='fixed')` = 等你回归的 bug(你报的 bug 被修好了,该去验了)。
+- **人类测试员没有 agent 时**:用看板的 `/report-bug` 网页报 bug;`/board` 上 fixed 的 bug 卡片有「回归通过 / 打回」按钮。
+
 ## 已知限制
 
 - **没有 un-claim**:认领错了 → `update_status` 置 `'abandoned'`(closing_note 说明缘由)+ 重新登记为 backlog。

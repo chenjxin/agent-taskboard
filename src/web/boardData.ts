@@ -1,7 +1,7 @@
 import { isBroadGlob } from '../core/globs.js';
 import { hoursSince, isStale } from '../core/staleness.js';
 import { blockingDeps } from '../core/standup.js';
-import type { CommentKind, DepInfo, TaskStatus } from '../core/types.js';
+import type { BugSeverity, CommentKind, DepInfo, TaskStatus, TaskType } from '../core/types.js';
 import type { Db } from '../db/connection.js';
 import { countByTask, recentByTask } from '../db/repo/comments.js';
 import { depInfosForTasks } from '../db/repo/deps.js';
@@ -13,7 +13,7 @@ const ROW_CAP = 500;
 
 /** Rides into teammates' agent context via the SessionStart hook (raw JSON dump). */
 const PROTOCOL_HINT =
-  "Board protocol v2: tasks may be 'planned', including unowned backlog items (owner null) — claim_task before working on one; check_overlap also covers planned tasks; get_standup returns a 24h digest; closing a task auto-notifies tasks that depend on it. The board has a backlog but never assigns work.";
+  "Board protocol v3: tasks may be 'planned', including unowned backlog items (owner null) — claim_task before working on one; bugs are type='bug' tasks with a verification lifecycle (fix_ready -> fixed/待回归 -> verify_pass|verify_fail via update_bug_state); check_overlap covers planned tasks; get_standup returns a 24h digest incl. awaiting_verification; closing a task auto-notifies dependents. The board has a backlog but never assigns work.";
 
 export interface BoardQuery {
   project?: string | undefined;
@@ -27,6 +27,9 @@ export interface BoardTask {
   owner_agent_id: string | null;
   branch: string | null;
   status: TaskStatus;
+  type: TaskType;
+  severity: BugSeverity | null;
+  fixed_at: number | null;
   iteration: string | null;
   created_at: number;
   updated_at: number;
@@ -49,6 +52,7 @@ export interface IterationStat {
   total: number;
   planned: number;
   active: number;
+  fixed: number;
   done: number;
   abandoned: number;
   /** Average created->closed hours across done tasks, null until one finishes. */
@@ -63,7 +67,7 @@ export interface BoardPayload {
   projects: Array<{ project: string; iterations: IterationStat[]; tasks: BoardTask[] }>;
 }
 
-const STATUS_FILTERS = new Set(['planned', 'active', 'done', 'abandoned', 'all', 'open']);
+const STATUS_FILTERS = new Set(['planned', 'active', 'fixed', 'done', 'abandoned', 'all', 'open']);
 
 function iterationStats(tasks: BoardTask[]): IterationStat[] {
   const byIteration = new Map<string, BoardTask[]>();
@@ -85,6 +89,7 @@ function iterationStats(tasks: BoardTask[]): IterationStat[] {
         total: rows.length,
         planned: rows.filter((t) => t.status === 'planned').length,
         active: rows.filter((t) => t.status === 'active').length,
+        fixed: rows.filter((t) => t.status === 'fixed').length,
         done: done.length,
         abandoned: rows.filter((t) => t.status === 'abandoned').length,
         avg_cycle_hours:
@@ -128,6 +133,9 @@ export function buildBoardData(
       owner_agent_id: t.owner_agent_id,
       branch: t.branch,
       status: t.status,
+      type: t.type,
+      severity: t.severity,
+      fixed_at: t.fixed_at,
       iteration: t.iteration,
       created_at: t.created_at,
       updated_at: t.updated_at,
@@ -155,7 +163,7 @@ export function buildBoardData(
   }
 
   return {
-    protocol_version: 2,
+    protocol_version: 3,
     protocol_hint: PROTOCOL_HINT,
     generated_at: now,
     stale_ttl_hours: staleTtlHours,

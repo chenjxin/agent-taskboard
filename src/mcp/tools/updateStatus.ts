@@ -1,9 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { BoardError } from '../../core/errors.js';
 import { upsertAgent } from '../../db/repo/agents.js';
-import { depNoticeFirstLine, insertComment, SYSTEM_AUTHOR } from '../../db/repo/comments.js';
-import { dependentsOf } from '../../db/repo/deps.js';
-import { getTask, setStatus } from '../../db/repo/tasks.js';
+import { getTask } from '../../db/repo/tasks.js';
+import { closeTaskInTx } from '../cores.js';
 import type { BoardDeps } from '../deps.js';
 import { TOOL_DESCRIPTIONS } from '../descriptions.js';
 import { updateStatusShape } from '../schemas.js';
@@ -47,33 +46,21 @@ export function registerUpdateStatus(server: McpServer, deps: BoardDeps): void {
         }
 
         const status = args.status;
-        // Read dependents INSIDE the transaction: a second WAL writer could
-        // close one between a pre-read and the writes.
         const dependents = deps.db.transaction(() => {
           upsertAgent(deps.db, args.agent_id, now);
-          setStatus(deps.db, task.id, status, closingNote, now);
-          const open = dependentsOf(deps.db, task.id).filter(
-            (d) => d.status === 'planned' || d.status === 'active',
-          );
-          for (const dep of open) {
-            insertComment(
-              deps.db,
-              dep.task_id,
-              SYSTEM_AUTHOR,
-              'dependency_notice',
-              `${depNoticeFirstLine(status, task.id)}\nYour dependency '${task.title}' (${task.id}) was closed as ${status.toUpperCase()}${
-                status === 'abandoned' ? ' — the prerequisite work was NOT completed' : ''
-              }. Closing note: ${closingNote}`,
-              now,
-            );
-          }
-          return open;
+          return closeTaskInTx(deps, task, status, closingNote, now);
         })();
 
         return ok({
           ok: true,
           task: getTask(deps.db, task.id),
-          dependents_notified: dependents.map((d) => d.task_id),
+          dependents_notified: dependents,
+          warnings: {
+            verification_skipped:
+              task.type === 'bug' && status === 'done'
+                ? "Bug closed WITHOUT the verification flow — no [verified by] audit trail. Next time: update_bug_state fix_ready, then someone verifies with verify_pass."
+                : null,
+          },
           next_step: 'Delete .claude/board-task.json from your worktree.',
           feedback_hint:
             'Optional: if anything about the BOARD was awkward during this task (or notably good), submit_feedback takes one sentence — it goes only to the board operators.',
