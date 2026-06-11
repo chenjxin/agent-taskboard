@@ -155,7 +155,7 @@ if [ -z "$body" ]; then
   exit 0
 fi
 
-reminder="任务看板协议提醒(agent_id: $AGENT_ID,当前项目 slug: $slug):接到新开发任务时,写码前先 check_overlap(project + 计划触碰的路径),再 register_task 登记认领并把 task id 写入 .claude/board-task.json;续作已登记的工作树先 heartbeat 并阅读返回的 activity;完成后 update_status(done|abandoned)+ closing_note。看板只提供信息,从不分派任务。你在板上的未关闭任务(原始 JSON)如下:"
+reminder="任务看板协议提醒(agent_id: $AGENT_ID,当前项目 slug: $slug):接到新开发任务时,写码前先 check_overlap(project + 计划触碰的路径),再 register_task 登记认领并把 task id 写入 .claude/board-task.json;续作已登记的工作树先 heartbeat 并阅读返回的 activity;完成后 update_status(done|abandoned)+ closing_note。看板只提供信息,从不分派任务。若下方 JSON 的 related_backlog 非空——那是与你历史任务地盘重叠的待认领 bug——向你的人类提及并询问是否认领,绝不擅自 claim。你在板上的未关闭任务(原始 JSON)如下:"
 
 # Build the hook JSON safely: jq if available, else python3, else skip silently.
 if command -v jq >/dev/null 2>&1; then

@@ -80,7 +80,7 @@ describe('GET /api/board over HTTP', () => {
     expect(digest.projects.length).toBeGreaterThan(0);
 
     const payload2 = (await (await fetch(`${base}/api/board`)).json()) as { protocol_version: number };
-    expect(payload2.protocol_version).toBe(3);
+    expect(payload2.protocol_version).toBe(4);
   });
 
   it('enforces bearer auth on /mcp and /api/board when AUTH_TOKEN is set', async () => {

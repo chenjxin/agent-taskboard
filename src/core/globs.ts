@@ -72,6 +72,26 @@ function prefixContains(a: string, b: string): boolean {
 }
 
 /** Symmetric: do these two declared paths/globs plausibly touch common files? */
+/**
+ * picomatch compiles its regex from scratch on every call (no internal cache).
+ * That was fine when only user-triggered check_overlap paid it; routing now
+ * runs matching on every heartbeat and SessionStart payload, where cost scales
+ * with agent tenure. Bounded memo: matchers repeat heavily (same declared
+ * globs against many candidates), so a small cap suffices.
+ */
+const matcherCache = new Map<string, ReturnType<typeof picomatch>>();
+const MATCHER_CACHE_CAP = 500;
+
+function cachedMatcher(source: string): ReturnType<typeof picomatch> {
+  let m = matcherCache.get(source);
+  if (!m) {
+    if (matcherCache.size >= MATCHER_CACHE_CAP) matcherCache.clear();
+    m = picomatch(source, { dot: true, nocase: true });
+    matcherCache.set(source, m);
+  }
+  return m;
+}
+
 export function pathPairIntersects(mine: string, theirs: string): boolean {
   const a = expand(mine);
   const b = expand(theirs);
@@ -83,7 +103,7 @@ export function pathPairIntersects(mine: string, theirs: string): boolean {
   }
   const glob = a.kind === 'glob' ? a : b;
   const literal = a.kind === 'literal' ? a : b;
-  if (picomatch(glob.source, { dot: true, nocase: true })(literal.base)) return true;
+  if (cachedMatcher(glob.source)(literal.base)) return true;
   // Containment rescue, FP-biased: literal 'src' vs glob 'src/**/*.ts' -> true.
   return prefixContains(literal.base, glob.base);
 }

@@ -2,6 +2,13 @@
 
 版本清单与功能说明。在线版本:`GET /changelog`。
 
+## v1.7.0 (2026-06-11) — 信息级 bug 路由(把待认领 bug 递到地盘开发眼前)
+
+- 缺口:bug 报上板后,对应模块的开发 agent 若不开新任务,没有任何拉取面会让它看见;闭环依赖人类口头转达。修复(不破"永不指派"红线):
+  - **SessionStart hook 数据新增 `related_backlog`**(/api/board?owner= 时返回):无主 backlog bug 与该 agent **历史任务**(含已关闭)scope 重叠者,同 project 内匹配,path 接触 HIGH > module 接触 MEDIUM,按匹配级 + severity 排序,上限 5;hook 提示语引导"向人类提及并询问,绝不擅自认领"。
+  - **heartbeat 响应新增 `related_backlog`**:与**当前任务** scope 重叠的待认领 bug,干活期间即可撞见。
+  - 无 scope 的 bug(人类网页报的)不路由——路由需要正信号,否则等于广播噪音;此类 bug 仍走 standup/看板/人类调度。protocol_version 3→4。无 schema 变更。
+
 ## v1.6.0 (2026-06-11) — scope 漂移检测 + 紧急信号分层(两条立项任务交付)
 
 - **scope 漂移检测**(t_18ws0llpe2):`board-check.sh` 的 `--receipt` 模式升级——worktree 已登记任务时,对比 `git status -uall` 实际改动与任务声明的 path glob,超出即注入提醒(点名漂移文件 + 引导 `update_scope`);module-only scope(常驻角色)与板子不可达时静默。已接入的同事重新下载一次 board-check.sh 即获得该能力。

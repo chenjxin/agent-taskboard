@@ -83,6 +83,18 @@ function evaluatePairs(mine: ScopeRowInput[], theirs: ScopeRowInput[]): PairEval
   return null;
 }
 
+/**
+ * Bare contact test between two scope sets, for routing (which backlog bugs sit
+ * on whose turf). Unlike the full report, UNKNOWN (either side scopeless) maps
+ * to null: routing needs a POSITIVE signal — a scopeless bug routed to everyone
+ * is noise, not information.
+ */
+export function scopesTouch(mine: ScopeRowInput[], theirs: ScopeRowInput[]): 'HIGH' | 'MEDIUM' | null {
+  const evaluated = evaluatePairs(mine, theirs);
+  if (evaluated === null || evaluated.severity === 'UNKNOWN') return null;
+  return evaluated.severity;
+}
+
 function broadGlobsOf(scope: ScopeRowInput[]): string[] {
   return scope.filter((r) => r.path_glob && isBroadGlob(r.path_glob)).map((r) => r.path_glob as string);
 }

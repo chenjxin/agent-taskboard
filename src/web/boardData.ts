@@ -6,6 +6,7 @@ import type { Db } from '../db/connection.js';
 import { countByTask, recentByTask } from '../db/repo/comments.js';
 import { depInfosForTasks } from '../db/repo/deps.js';
 import { scopesByTasks } from '../db/repo/scopes.js';
+import { relatedBacklogForAgent, type RelatedBacklogBug } from '../db/repo/routing.js';
 import { boardTasks, listTasks, type StatusFilter } from '../db/repo/tasks.js';
 
 const CLOSED_WINDOW_MS = 7 * 24 * 3_600_000;
@@ -13,7 +14,7 @@ const ROW_CAP = 500;
 
 /** Rides into teammates' agent context via the SessionStart hook (raw JSON dump). */
 const PROTOCOL_HINT =
-  "Board protocol v3: tasks may be 'planned', including unowned backlog items (owner null) — claim_task before working on one; bugs are type='bug' tasks with a verification lifecycle (fix_ready -> fixed/待回归 -> verify_pass|verify_fail via update_bug_state); check_overlap covers planned tasks; get_standup returns a 24h digest incl. awaiting_verification; closing a task auto-notifies dependents. The board has a backlog but never assigns work.";
+  "Board protocol v4: tasks may be 'planned', including unowned backlog items (owner null) — claim_task before working on one; bugs are type='bug' tasks with a verification lifecycle (fix_ready -> fixed/待回归 -> verify_pass|verify_fail via update_bug_state); check_overlap covers planned tasks; get_standup returns a 24h digest incl. awaiting_verification; closing a task auto-notifies dependents. With ?owner= the payload adds related_backlog: unclaimed bugs overlapping that agent's historical task scopes — information only, mention to your human before claiming. The board has a backlog but never assigns work.";
 
 export interface BoardQuery {
   project?: string | undefined;
@@ -65,6 +66,12 @@ export interface BoardPayload {
   generated_at: number;
   stale_ttl_hours: number;
   projects: Array<{ project: string; iterations: IterationStat[]; tasks: BoardTask[] }>;
+  /**
+   * Only with an ?owner= query (the SessionStart-hook shape): unclaimed backlog
+   * bugs overlapping that agent's historical task scopes. Information-tier
+   * routing — the agent tells its human; claiming stays a human decision.
+   */
+  related_backlog?: RelatedBacklogBug[];
 }
 
 const STATUS_FILTERS = new Set(['planned', 'active', 'fixed', 'done', 'abandoned', 'all', 'open']);
@@ -164,12 +171,13 @@ export function buildBoardData(
   }
 
   return {
-    protocol_version: 3,
+    protocol_version: 4,
     protocol_hint: PROTOCOL_HINT,
     generated_at: now,
     stale_ttl_hours: staleTtlHours,
     projects: [...byProject.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([project, tasks]) => ({ project, iterations: iterationStats(tasks), tasks })),
+    ...(query.owner ? { related_backlog: relatedBacklogForAgent(db, query.owner) } : {}),
   };
 }

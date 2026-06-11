@@ -3,6 +3,7 @@ import { BoardError } from '../../core/errors.js';
 import type { CommentRow } from '../../core/types.js';
 import { upsertAgent } from '../../db/repo/agents.js';
 import { commentsSince } from '../../db/repo/comments.js';
+import { relatedBacklogForTask } from '../../db/repo/routing.js';
 import { getTask, touchHeartbeat } from '../../db/repo/tasks.js';
 import type { BoardDeps } from '../deps.js';
 import { TOOL_DESCRIPTIONS } from '../descriptions.js';
@@ -55,11 +56,17 @@ export function registerHeartbeat(server: McpServer, deps: BoardDeps): void {
         })();
 
         const urgentCount = activity.filter((c) => c.urgent === 1).length;
+        const relatedBacklog = relatedBacklogForTask(deps.db, task);
         return ok({
           ok: true,
           previous_heartbeat_at: previous,
           stale_ttl_hours: deps.staleTtlHours,
           activity,
+          related_backlog: relatedBacklog,
+          related_backlog_hint:
+            relatedBacklog.length > 0
+              ? `${relatedBacklog.length} unclaimed backlog bug(s) overlap THIS task's scope. Mention them to your human — claim_task ONLY if they say so; the board informs, it never assigns.`
+              : null,
           activity_hint:
             urgentCount > 0
               ? `⚠ ${urgentCount} of these are marked URGENT — read those FIRST, before anything else in this turn.`
