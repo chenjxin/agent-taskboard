@@ -46,10 +46,26 @@ export interface ProjectStandup {
   boundary_agreements: number;
 }
 
+export interface StandupAlert {
+  task_id: string;
+  title: string;
+  project: string;
+  author_agent_id: string;
+  body: string;
+  created_at: number;
+}
+
 export interface StandupReport {
   window_hours: number;
   since: number;
   until: number;
+  /**
+   * Urgent comments on open tasks within the window — read these FIRST.
+   * Deliberately project-scoped but NOT iteration-scoped: urgency transcends
+   * sprint boundaries (an iteration-filtered standup still shows every alert
+   * in the project).
+   */
+  alerts: StandupAlert[];
   projects: ProjectStandup[];
   /** Present only when an iteration filter was given. */
   iteration_stock: IterationStock | null;
@@ -61,6 +77,8 @@ export interface StandupInput {
   depsByTask: Map<string, DepInfo[]>;
   /** (project, kind) -> count of comments created within the window. */
   commentCounts: Array<{ project: string; kind: string; n: number }>;
+  /** Urgent comments on open tasks within the window (newest first). */
+  urgentComments: StandupAlert[];
   staleTtlHours: number;
   now: number;
   windowHours: number;
@@ -173,5 +191,9 @@ export function computeStandup(input: StandupInput): StandupReport {
     )
     .sort((a, b) => a.project.localeCompare(b.project));
 
-  return { window_hours: windowHours, since, until: now, projects, iteration_stock: iterationStock };
+  const alerts = input.urgentComments.filter(
+    (a) => !input.project || a.project === input.project,
+  );
+
+  return { window_hours: windowHours, since, until: now, alerts, projects, iteration_stock: iterationStock };
 }

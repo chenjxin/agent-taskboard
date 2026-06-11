@@ -146,6 +146,11 @@
   .group-head { font-size: 12px; font-weight: 600; color: var(--dim); margin: 14px 0 8px; }
   .standup-box { max-width: 1500px; margin: 0 auto; padding: 12px 20px 0; }
   .standup-box summary { cursor: pointer; color: var(--dim); font-size: 12px; user-select: none; }
+  .standup-alerts { border: 1px solid var(--red-bd); background: var(--red-bg); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
+  .standup-alerts-head { color: var(--red-fg); font-weight: 600; }
+  .standup-alert { margin: 2px 0 2px 8px; }
+  .comment.comment-urgent { border-left-width: 4px; border-left-color: var(--red-bd); }
+  .comment.comment-urgent .comment-kind::after { content: ' ⚠URGENT'; color: var(--red-fg); font-weight: 700; }
   .standup-project {
     margin-top: 10px; padding: 8px 12px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
@@ -258,7 +263,7 @@ function commentsBlock(t, now) {
   box.appendChild(el('div', 'comments-head', label));
   for (const c of t.recent_comments) {
     const kind = KINDS[c.kind] || 'comment'; // whitelist: never build class names from raw data
-    const item = el('div', 'comment kind-' + kind);
+    const item = el('div', 'comment kind-' + kind + (c.urgent === 1 ? ' comment-urgent' : ''));
     const meta = el('div', 'comment-meta');
     meta.appendChild(ownerBadge(c.author_agent_id));
     meta.appendChild(el('span', 'comment-kind', c.kind));
@@ -498,7 +503,20 @@ function renderStandup() {
       state.standupError ? 'standup fetch failed: ' + state.standupError : 'loading…'));
     return;
   }
-  if (state.standup.projects.length === 0) {
+  const alerts = state.standup.alerts || [];
+  if (alerts.length > 0) {
+    const strip = el('div', 'standup-alerts');
+    strip.appendChild(el('p', 'standup-line standup-alerts-head', '⚠ URGENT ' + alerts.length + ' 条 — 优先处理:'));
+    for (const a of alerts) {
+      const line = el('p', 'standup-line standup-alert');
+      const span = el('span', 'standup-task', a.project + ' / ' + a.title + ' — ' + a.body);
+      span.title = a.task_id + ' · by ' + a.author_agent_id + ' · ' + new Date(a.created_at).toISOString();
+      line.appendChild(span);
+      strip.appendChild(line);
+    }
+    $standupBody.appendChild(strip);
+  }
+  if (state.standup.projects.length === 0 && alerts.length === 0) {
     $standupBody.appendChild(el('p', 'empty', '窗口内无活动'));
     return;
   }

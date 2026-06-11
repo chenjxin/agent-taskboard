@@ -71,7 +71,7 @@ describe('GET /api/board over HTTP', () => {
     expect(html).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML/);
 
     const health = await fetch(`${base}/healthz`);
-    expect(await health.json()).toMatchObject({ ok: true, schema_version: 4 });
+    expect(await health.json()).toMatchObject({ ok: true, schema_version: 5 });
 
     const standup = await fetch(`${base}/api/standup?hours=48`);
     expect(standup.status).toBe(200);

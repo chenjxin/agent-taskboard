@@ -11,10 +11,32 @@ export function insertComment(
   kind: CommentKind,
   body: string,
   now: number,
+  urgent = false,
 ): void {
   db.prepare(
-    `INSERT INTO comments (task_id, author_agent_id, kind, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-  ).run(taskId, authorAgentId, kind, body, now);
+    `INSERT INTO comments (task_id, author_agent_id, kind, urgent, body, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(taskId, authorAgentId, kind, urgent ? 1 : 0, body, now);
+}
+
+export interface UrgentAlertRow {
+  task_id: string;
+  title: string;
+  project: string;
+  author_agent_id: string;
+  body: string;
+  created_at: number;
+}
+
+/** Urgent comments within the window on still-open tasks — the standup alerts feed. */
+export function urgentCommentsSince(db: Db, sinceMs: number): UrgentAlertRow[] {
+  return db
+    .prepare(
+      `SELECT c.task_id, t.title, t.project, c.author_agent_id, c.body, c.created_at
+       FROM comments c JOIN tasks t ON t.id = c.task_id
+       WHERE c.urgent = 1 AND c.created_at > ? AND t.status IN ('planned', 'active', 'fixed')
+       ORDER BY c.created_at DESC`,
+    )
+    .all(sinceMs) as UrgentAlertRow[];
 }
 
 export function commentsByTask(db: Db, taskId: string): CommentRow[] {

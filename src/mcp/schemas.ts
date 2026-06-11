@@ -132,6 +132,12 @@ export const addCommentShape = {
     .describe(`${P.task_id} Coordination happens on the COUNTERPART's thread — comment on their task.`),
   body: z.string().min(1).max(8000).describe(P.comment_body),
   kind: z.enum(['comment', 'boundary_agreement']).optional().describe(P.comment_kind),
+  urgent: z
+    .boolean()
+    .optional()
+    .describe(
+      "Escalation tier, default false. ONLY for things needing immediate attention (deployment-level regressions, blocking breakage): urgent comments top the standup alerts, the owner's heartbeat activity, and the board. Still pull-only — nobody gets interrupted. Overuse kills the signal.",
+    ),
 };
 
 export const updateStatusShape = {

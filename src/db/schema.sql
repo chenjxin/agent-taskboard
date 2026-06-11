@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '4');
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '5');
 
 -- Self-reported identities ('human/agent'), auto-upserted on every tool call.
 CREATE TABLE IF NOT EXISTS agents (
@@ -57,11 +57,13 @@ CREATE TABLE IF NOT EXISTS scopes (
 CREATE INDEX IF NOT EXISTS idx_scopes_task ON scopes(task_id);
 
 -- author_agent_id has no FK on purpose: the reserved 'system' author needs no agents row.
+-- urgent: escalation TIER within the pull-only model (alerts surfaces), never a push.
 CREATE TABLE IF NOT EXISTS comments (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id         TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
   author_agent_id TEXT NOT NULL,
   kind            TEXT NOT NULL CHECK (kind IN ('comment', 'boundary_agreement', 'overlap_notice', 'dependency_notice')),
+  urgent          INTEGER NOT NULL DEFAULT 0,
   body            TEXT NOT NULL,
   created_at      INTEGER NOT NULL
 );

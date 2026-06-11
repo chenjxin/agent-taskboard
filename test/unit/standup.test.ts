@@ -34,6 +34,7 @@ function run(tasks: TaskRow[], extra: Partial<Parameters<typeof computeStandup>[
     tasks,
     depsByTask: new Map(),
     commentCounts: [],
+    urgentComments: [],
     staleTtlHours: 8,
     now: NOW,
     windowHours: 24,

@@ -29,14 +29,18 @@ export function registerAddComment(server: McpServer, deps: BoardDeps): void {
         const task = getTask(deps.db, args.task_id);
         if (!task) throw new BoardError('TASK_NOT_FOUND', `No task with id '${args.task_id}'.`);
 
+        const urgent = args.urgent === true;
         deps.db.transaction(() => {
           upsertAgent(deps.db, args.agent_id, now);
-          insertComment(deps.db, task.id, args.agent_id, kind, body, now);
+          insertComment(deps.db, task.id, args.agent_id, kind, body, now, urgent);
         })();
 
         return ok({
           ok: true,
-          comment: { task_id: task.id, author_agent_id: args.agent_id, kind, body, created_at: now },
+          comment: { task_id: task.id, author_agent_id: args.agent_id, kind, urgent, body, created_at: now },
+          urgent_note: urgent
+            ? 'Marked URGENT: it tops the standup alerts and the owner\'s next heartbeat, and is highlighted on the board. Still pull-only — nobody is interrupted. Use sparingly or it stops meaning anything.'
+            : null,
           hint:
             kind === 'boundary_agreement'
               ? 'Boundary recorded. Also call update_scope on YOUR OWN task so the overlap engine reflects the agreed split.'

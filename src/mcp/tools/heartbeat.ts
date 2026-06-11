@@ -54,15 +54,18 @@ export function registerHeartbeat(server: McpServer, deps: BoardDeps): void {
           touchHeartbeat(deps.db, task.id, now);
         })();
 
+        const urgentCount = activity.filter((c) => c.urgent === 1).length;
         return ok({
           ok: true,
           previous_heartbeat_at: previous,
           stale_ttl_hours: deps.staleTtlHours,
           activity,
           activity_hint:
-            activity.length > 0
-              ? 'READ these before continuing — they may include system overlap notices and boundary proposals from teammates.'
-              : null,
+            urgentCount > 0
+              ? `⚠ ${urgentCount} of these are marked URGENT — read those FIRST, before anything else in this turn.`
+              : activity.length > 0
+                ? 'READ these before continuing — they may include system overlap notices and boundary proposals from teammates.'
+                : null,
         });
       }),
   );

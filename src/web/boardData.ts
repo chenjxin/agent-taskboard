@@ -43,7 +43,7 @@ export interface BoardTask {
   broad_glob: boolean;
   depends_on: DepInfo[];
   blocked: boolean;
-  recent_comments: Array<{ author_agent_id: string; kind: CommentKind; body: string; created_at: number }>;
+  recent_comments: Array<{ author_agent_id: string; kind: CommentKind; urgent: number; body: string; created_at: number }>;
   comment_count: number;
 }
 
@@ -152,6 +152,7 @@ export function buildBoardData(
       recent_comments: recentByTask(db, t.id, 3).map((c) => ({
         author_agent_id: c.author_agent_id,
         kind: c.kind,
+        urgent: c.urgent,
         body: c.body,
         created_at: c.created_at,
       })),

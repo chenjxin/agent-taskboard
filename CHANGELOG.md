@@ -2,6 +2,11 @@
 
 版本清单与功能说明。在线版本:`GET /changelog`。
 
+## v1.6.0 (2026-06-11) — scope 漂移检测 + 紧急信号分层(两条立项任务交付)
+
+- **scope 漂移检测**(t_18ws0llpe2):`board-check.sh` 的 `--receipt` 模式升级——worktree 已登记任务时,对比 `git status -uall` 实际改动与任务声明的 path glob,超出即注入提醒(点名漂移文件 + 引导 `update_scope`);module-only scope(常驻角色)与板子不可达时静默。已接入的同事重新下载一次 board-check.sh 即获得该能力。
+- **紧急信号分层**(t_1daqtgly6n):`add_comment` 新增 `urgent: true`(描述明示"滥用即失效");顶置面:`get_standup` 顶部 `alerts[]`(任务关闭后自动退场)、heartbeat 提示翻转为"先读 URGENT"、看板站会面板红条 + 留言 ⚠ 标记。**仍是拉取式,永不推送**——分层的是"告知"本身,不是打断。Schema v5(comments 加 urgent 列,自动迁移)。
+
 ## v1.5.1 (2026-06-11) — 第二轮反馈(鸣谢 chenjx/claude-qa,QA 常驻角色视角)
 
 - **修复**:`/adoption/*` 四个接入文件现在与 `/setup` 一样按请求 Host 替换看板地址——此前协议片段里硬编码 `nas.lan:8765`,不解析该域名的机器只能手动改;顺带下载的 `board-check.sh` 默认 BOARD_URL 即为正确地址,免手动固定。

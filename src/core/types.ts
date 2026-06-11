@@ -71,6 +71,8 @@ export interface CommentRow {
   task_id: string;
   author_agent_id: string;
   kind: CommentKind;
+  /** 1 = escalation tier within the pull-only model (surfaces in alerts), 0 = normal. */
+  urgent: number;
   body: string;
   created_at: number;
 }

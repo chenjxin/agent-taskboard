@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export type Db = Database.Database;
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
 function baselineSql(): string {
@@ -103,6 +103,17 @@ const MIGRATIONS: Migration[] = [
       for (const idx of ['idx_tasks_project_status', 'idx_tasks_owner_status']) {
         db.exec(baselineStatement('index', idx));
       }
+    },
+  },
+  {
+    to: 5,
+    name: 'urgent comment tier (pull-only escalation)',
+    up: (db) => {
+      rebuildFromBaseline(db, 'comments', {
+        target: 'id, task_id, author_agent_id, kind, urgent, body, created_at',
+        source: 'id, task_id, author_agent_id, kind, 0, body, created_at',
+      });
+      db.exec(baselineStatement('index', 'idx_comments_task_created'));
     },
   },
 ];

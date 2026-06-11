@@ -3,7 +3,7 @@ import { computeStandup } from '../../core/standup.js';
 import { normalizeProjectSlug } from '../../core/slug.js';
 import type { Db } from '../../db/connection.js';
 import { upsertAgent } from '../../db/repo/agents.js';
-import { commentKindCountsSince } from '../../db/repo/comments.js';
+import { commentKindCountsSince, urgentCommentsSince } from '../../db/repo/comments.js';
 import { depInfosForTasks } from '../../db/repo/deps.js';
 import { boardTasks } from '../../db/repo/tasks.js';
 import type { BoardDeps } from '../deps.js';
@@ -30,6 +30,7 @@ export function buildStandup(db: Db, staleTtlHours: number, now: number, query: 
       tasks.map((t) => t.id),
     ),
     commentCounts: commentKindCountsSince(db, since),
+    urgentComments: urgentCommentsSince(db, since),
     staleTtlHours,
     now,
     windowHours: query.windowHours,
@@ -59,9 +60,11 @@ export function registerGetStandup(server: McpServer, deps: BoardDeps): void {
         return ok({
           standup: report,
           hint:
-            report.projects.length === 0
-              ? 'No activity in the window (and no current blockers/stale tasks). Widen window_hours or drop filters if that surprises you.'
-              : null,
+            report.alerts.length > 0
+              ? `⚠ ${report.alerts.length} URGENT alert(s) at standup.alerts — read those FIRST.`
+              : report.projects.length === 0
+                ? 'No activity in the window (and no current blockers/stale tasks). Widen window_hours or drop filters if that surprises you.'
+                : null,
         });
       }),
   );

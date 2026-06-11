@@ -73,7 +73,7 @@ curl -s __BOARD_ORIGIN__/adoption/hooks-settings.snippet.json
 
 把最后一条命令返回的 `hooks` 块(以及 `permissions` 块,若第 1.5 步获人类同意)合并进仓库的 `.claude/settings.json`,并把其中的脚本路径改为 `"$CLAUDE_PROJECT_DIR/.claude/hooks/board-check.sh"`(你刚才放脚本的位置)。
 
-这两个 hook 的作用:SessionStart 时把你自己的在途任务注入上下文(防 compaction 失忆),UserPromptSubmit 时在本 worktree 未登记任务的情况下提醒你走登记流程。看板不可达时它们静默跳过,不会影响会话。脚本里的 curl 已带 `--noproxy '*'`(看板是内网服务,永远不走代理)。
+这两个 hook 的作用:SessionStart 时把你自己的在途任务注入上下文(防 compaction 失忆);UserPromptSubmit 时,未登记任务则提醒登记,**已登记则做 scope 漂移检测**——对比 `git status` 实际改动与任务声明的 path glob,发现超出即提醒 `update_scope`(计划总在几分钟内漂移,不更新声明,重叠检查就在按过期地图导航)。看板不可达时它们静默跳过,不会影响会话。脚本里的 curl 已带 `--noproxy '*'`(看板是内网服务,永远不走代理)。
 
 ## 4.5 代理环境注意(本机 shell 有全局代理时必读)
 

@@ -24,7 +24,7 @@ describe('openDb on a file path', () => {
     const version = db2.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as {
       value: string;
     };
-    expect(version.value).toBe('4');
+    expect(version.value).toBe('5');
     db2.close();
   });
 });
